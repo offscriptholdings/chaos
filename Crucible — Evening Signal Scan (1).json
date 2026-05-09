@@ -1,0 +1,330 @@
+{
+  "name": "Crucible — Evening Signal Scan",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 15 16 * * 1-5"
+            }
+          ]
+        }
+      },
+      "id": "2f516d34-9341-4d33-aae8-9b58a5ad7c69",
+      "name": "Market Close Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -2160,
+        112
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://api.polygon.io/v2/snapshot/locale/us/markets/stocks/tickers?apiKey=L8wCDo8xEcU_Pw_Dc5c8JrpdeGzFBtS7",
+        "options": {}
+      },
+      "id": "c3df2b70-e4b5-4c33-ad21-53cdc98ca23f",
+      "name": "Polygon — Full Market Snapshot",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -1920,
+        112
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Pre-filter: narrow universe to viable candidates before indicator calls\nconst tickers = $input.item.json.tickers || [];\n\nconst candidates = tickers.filter(t => {\n  const price = t.day?.c || 0;\n  const volume = t.day?.v || 0;\n  const prevClose = t.prevDay?.c || 0;\n  const changePercent = t.todaysChangePerc || 0;\n\n  return (\n    price >= 15 &&\n    price <= 500 &&\n    volume >= 500000 &&\n    prevClose > 0\n  );\n}).slice(0, 100); // Cap at 100 to manage API calls\n\nreturn candidates.map(t => ({\n  json: {\n    ticker: t.ticker,\n    price: t.day?.c,\n    open: t.day?.o,\n    high: t.day?.h,\n    low: t.day?.l,\n    volume: t.day?.v,\n    vwap: t.day?.vw,\n    prevClose: t.prevDay?.c,\n    change_pct: t.todaysChangePerc\n  }\n}));"
+      },
+      "id": "4416318b-64d0-4f76-88bf-83a9d34e8d21",
+      "name": "Pre-Filter Candidates",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1680,
+        112
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.polygon.io/v1/indicators/rsi/{{ $json.ticker }}?timespan=day&adjusted=true&window=14&series_type=close&order=desc&limit=2&apiKey=L8wCDo8xEcU_Pw_Dc5c8JrpdeGzFBtS7",
+        "options": {}
+      },
+      "id": "2da0b9da-10e4-4114-b645-245b71ae88d9",
+      "name": "Polygon — RSI",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -1440,
+        112
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.polygon.io/v1/indicators/macd/{{ $('Pre-Filter Candidates').item.json.ticker }}?timespan=day&adjusted=true&short_window=12&long_window=26&signal_window=9&series_type=close&order=desc&limit=2&apiKey=L8wCDo8xEcU_Pw_Dc5c8JrpdeGzFBtS7",
+        "options": {}
+      },
+      "id": "6649cbdd-185a-427e-94bf-2829ead833ce",
+      "name": "Polygon — MACD",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -1200,
+        112
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.polygon.io/v1/indicators/ema/{{ $('Pre-Filter Candidates').item.json.ticker }}?timespan=day&adjusted=true&window=200&series_type=close&order=desc&limit=1&apiKey=L8wCDo8xEcU_Pw_Dc5c8JrpdeGzFBtS7",
+        "options": {}
+      },
+      "id": "73678b73-80ee-4957-9b49-2360259b814a",
+      "name": "Polygon — EMA 200",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -960,
+        112
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.polygon.io/v1/indicators/ema/{{ $('Pre-Filter Candidates').item.json.ticker }}?timespan=day&adjusted=true&window=50&series_type=close&order=desc&limit=1&apiKey=L8wCDo8xEcU_Pw_Dc5c8JrpdeGzFBtS7",
+        "options": {}
+      },
+      "id": "ba7689e2-a6e6-4957-8e3c-43a54d945b45",
+      "name": "Polygon — EMA 50",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -720,
+        112
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const base = $('Pre-Filter Candidates').item.json;\nconst rsiData = $('Polygon — RSI').item.json.results?.values || [];\nconst macdData = $('Polygon — MACD').item.json.results?.values || [];\nconst ema200Data = $('Polygon — EMA 200').item.json.results?.values || [];\nconst ema50Data = $('Polygon — EMA 50').item.json.results?.values || [];\n\nconst rsi = rsiData[0]?.value || null;\nconst macdHistogram = macdData[0]?.histogram || null;\nconst macdHistogramPrev = macdData[1]?.histogram || null;\nconst macdValue = macdData[0]?.value || null;\nconst ema200 = ema200Data[0]?.value || null;\nconst ema50 = ema50Data[0]?.value || null;\n\nconst price = base.price;\nconst volume = base.volume;\nconst vwap = base.vwap;\nconst high = base.high;\nconst low = base.low;\nconst changePct = base.change_pct;\n\nconst isS1 = Boolean(\n  ema200 && price > ema200 &&\n  rsi && rsi >= 40 && rsi <= 55 &&\n  macdValue && macdValue > 0 &&\n  changePct >= -3 && changePct <= 2 &&\n  price > vwap\n);\n\nconst dayRange = high - low;\nconst closeVsHighPct = dayRange > 0 ? (price - low) / dayRange : 0;\nconst isS2 = Boolean(\n  ema200 && price > ema200 &&\n  changePct >= 2 && changePct <= 15 &&\n  closeVsHighPct >= 0.7 &&\n  volume >= 1000000\n);\n\nconst macdCrossed = Boolean(macdHistogram > 0 && macdHistogramPrev !== null && macdHistogramPrev <= 0);\nconst nearEma50 = Boolean(ema50 && Math.abs(price - ema50) / ema50 < 0.05);\nconst nearEma200 = Boolean(ema200 && Math.abs(price - ema200) / ema200 < 0.05);\nconst isS3 = Boolean(\n  rsi && rsi >= 35 && rsi <= 50 &&\n  macdCrossed &&\n  (nearEma50 || nearEma200) &&\n  volume >= 500000\n);\n\nlet setup_type = null;\nlet entry_zone = null;\nlet stop = null;\nlet target = null;\n\nif (isS3) {\n  setup_type = 'S3';\n  entry_zone = parseFloat(price.toFixed(2));\n  stop = parseFloat((ema50 ? ema50 * 0.97 : price * 0.95).toFixed(2));\n  target = parseFloat((ema200 ? ema200 * 1.02 : price * 1.06).toFixed(2));\n} else if (isS2) {\n  setup_type = 'S2';\n  entry_zone = parseFloat(price.toFixed(2));\n  stop = parseFloat((low * 0.99).toFixed(2));\n  target = parseFloat((price * 1.10).toFixed(2));\n} else if (isS1) {\n  setup_type = 'S1';\n  entry_zone = parseFloat((price * 0.99).toFixed(2));\n  stop = parseFloat((ema200 * 0.98).toFixed(2));\n  target = parseFloat((price * 1.08).toFixed(2));\n}\n\nreturn {\n  ticker: base.ticker,\n  is_signal: setup_type !== null,\n  setup_type: setup_type,\n  price_data: {\n    close: price,\n    volume: volume,\n    vwap: vwap,\n    rsi: rsi,\n    macd_histogram: macdHistogram,\n    ema200: ema200,\n    ema50: ema50,\n    change_pct: changePct\n  },\n  entry_zone: entry_zone,\n  stop: stop,\n  target: target\n};"
+      },
+      "id": "1a0ac847-0c5d-4e6c-a02b-8c922cd76051",
+      "name": "Apply S1/S2/S3 Filters",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -480,
+        112
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.is_signal }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              },
+              "id": "4c3cdd4b-c51f-4968-bb7a-57eea146f4ea"
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "b1b3331c-2ac5-4ec8-a7b9-0b7ac6685d37",
+      "name": "Is Valid Signal?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -240,
+        112
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "return { message: 'No signal — filtered out', ticker: $json.ticker || 'unknown' };"
+      },
+      "id": "f156e955-0d6b-45f7-bfe0-70b9fc374230",
+      "name": "No Signal — Skip",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        0,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://dbnkkournwhgnguugbnq.supabase.co/rest/v1/paper_trades",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=minimal"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"ticker\": \"{{ $json.ticker }}\", \"setup_type\": \"{{ $json.setup_type }}\", \"entry_zone\": {{ $json.entry_zone }}, \"stop\": {{ $json.stop }}, \"target\": {{ $json.target }}, \"status\": \"pending_entry\"}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        -32,
+        16
+      ],
+      "id": "ae360a98-3f51-4c8d-bbd4-491385b381da",
+      "name": "Write Signal to Supabase",
+      "credentials": {
+        "supabaseApi": {
+          "id": "IoaagakstuDyI61D",
+          "name": "Supabase account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Market Close Trigger": {
+      "main": [
+        [
+          {
+            "node": "Polygon — Full Market Snapshot",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Polygon — Full Market Snapshot": {
+      "main": [
+        [
+          {
+            "node": "Pre-Filter Candidates",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pre-Filter Candidates": {
+      "main": [
+        [
+          {
+            "node": "Polygon — RSI",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Polygon — RSI": {
+      "main": [
+        [
+          {
+            "node": "Polygon — MACD",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Polygon — MACD": {
+      "main": [
+        [
+          {
+            "node": "Polygon — EMA 200",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Polygon — EMA 200": {
+      "main": [
+        [
+          {
+            "node": "Polygon — EMA 50",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Polygon — EMA 50": {
+      "main": [
+        [
+          {
+            "node": "Apply S1/S2/S3 Filters",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Apply S1/S2/S3 Filters": {
+      "main": [
+        [
+          {
+            "node": "Is Valid Signal?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Valid Signal?": {
+      "main": [
+        [
+          {
+            "node": "Write Signal to Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "No Signal — Skip",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  },
+  "versionId": "036fa526-bee7-4b4d-8ee5-7b009c06065c",
+  "meta": {
+    "instanceId": "17cdd79a20cd8cd23ee9590043ece7d1806b23bbcf88f9717c1ad2afd6bb63d4"
+  },
+  "id": "AQUeiuC2IKXp2FIQ",
+  "tags": []
+}

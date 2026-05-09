@@ -1,0 +1,24 @@
+{
+  "name": "Chaos — Trading OS",
+  "short_name": "Chaos",
+  "description": "Personal swing trading OS — signal queue, journal, shadow trades, backtesting.",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#FAFAF8",
+  "theme_color": "#3D5A7A",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

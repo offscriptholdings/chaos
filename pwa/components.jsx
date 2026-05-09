@@ -1,0 +1,184 @@
+// Shared components: Cards, badges, panels.
+
+const cls = (...xs) => xs.filter(Boolean).join(' ');
+
+const convictionStripe = (c) =>
+  c === 'High' ? 'bg-[#2E7D5A]' : c === 'Med' ? 'bg-[#B8893A]' : 'bg-[#8A8A94]';
+
+const Stat = ({ label, value, valueClass = 'text-[#18181A]' }) => (
+  <div className="flex flex-col gap-[3px]">
+    <div className="font-[Carlito] text-[10px] uppercase tracking-[0.08em] text-[#8A8A94]">{label}</div>
+    <div className={cls("font-['DM_Mono'] text-[14px]", valueClass)}>{value}</div>
+  </div>
+);
+
+const StatStrip = ({ items }) => (
+  <div className="rounded-[10px] border border-[rgba(24,24,26,0.08)] bg-[#F2F0EC] px-3 py-3">
+    <div className="grid grid-cols-4 gap-2">
+      {items.map((it) => (
+        <Stat key={it.label} label={it.label} value={it.value} valueClass={it.valueClass} />
+      ))}
+    </div>
+  </div>
+);
+
+const RegimeBanner = ({ state, detail }) => (
+  <div className="flex items-center gap-2 rounded-[10px] border border-[#3D5A7A]/30 bg-[#EBF0F5] px-3 py-2.5">
+    <span className="relative inline-flex h-[7px] w-[7px]">
+      <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#2E7D5A] opacity-50" />
+      <span className="relative inline-flex h-[7px] w-[7px] rounded-full bg-[#2E7D5A]" />
+    </span>
+    <span className="font-[Carlito] text-[11px] text-[#3C3C42]">
+      <span className="font-bold text-[#3D5A7A]">{state}</span>
+      <span className="text-[#8A8A94]"> — </span>
+      {detail}
+    </span>
+  </div>
+);
+
+const RRPill = ({ rr }) => (
+  <span className="inline-flex items-center rounded-full bg-[#EBF0F8] px-2 py-[2px] font-['DM_Mono'] text-[10px] font-medium tracking-tight text-[#3D6B9E]">
+    R:R {rr.toFixed(2)}
+  </span>
+);
+
+const ConvictionTag = ({ c }) => {
+  const cfg =
+    c === 'High' ? { fg: '#2E7D5A', bg: '#E8F4EE' }
+    : c === 'Med' ? { fg: '#B8893A', bg: '#F5EDD8' }
+    : { fg: '#8A8A94', bg: '#F2F0EC' };
+  return (
+    <span
+      className="inline-flex items-center rounded-full px-2 py-[2px] font-[Carlito] text-[10px] font-bold uppercase tracking-[0.1em]"
+      style={{ color: cfg.fg, background: cfg.bg }}
+    >
+      {c}
+    </span>
+  );
+};
+
+const PositionBadge = ({ type }) =>
+  type === 'live' ? (
+    <span className="inline-flex items-center rounded-full bg-[#F5EDD8] px-2 py-[2px] font-[Carlito] text-[10px] font-bold uppercase tracking-[0.1em] text-[#B8893A]">● Live</span>
+  ) : (
+    <span className="inline-flex items-center rounded-full bg-[#EBF0F5] px-2 py-[2px] font-[Carlito] text-[10px] font-bold uppercase tracking-[0.1em] text-[#3D5A7A]">○ Paper</span>
+  );
+
+const Card = ({ children, className = '', stripe, onClick }) => (
+  <div
+    onClick={onClick}
+    className={cls(
+      'relative overflow-hidden rounded-[12px] border border-[rgba(24,24,26,0.14)] bg-white',
+      onClick && 'cursor-pointer active:bg-[#F2F0EC]',
+      className,
+    )}
+  >
+    {stripe && <div className={cls('absolute left-0 right-0 top-0 h-[2px]', stripe)} />}
+    {children}
+  </div>
+);
+
+const SignalCard = ({ signal, onOpen, onTake, onPass }) => (
+  <Card stripe={convictionStripe(signal.conviction)}>
+    <div className="px-3.5 pb-3 pt-3.5">
+      <div className="flex cursor-pointer items-start justify-between" onClick={() => onOpen?.(signal.id)}>
+        <div className="flex flex-col">
+          <div className="flex items-baseline gap-2">
+            <span className="font-['Playfair_Display'] text-[22px] font-bold leading-none text-[#18181A]">{signal.ticker}</span>
+            <ConvictionTag c={signal.conviction} />
+          </div>
+          <div className="mt-[5px] font-[Carlito] text-[10px] font-bold uppercase tracking-[0.12em] text-[#5A7A9E]">
+            {SETUP_LABELS[signal.setup]}
+          </div>
+        </div>
+        <div className="flex flex-col items-end gap-[2px]">
+          <span className="font-['DM_Mono'] text-[16px] text-[#18181A]">${signal.entry.toFixed(2)}</span>
+          <span className="font-[Carlito] text-[10px] uppercase tracking-[0.08em] text-[#8A8A94]">{signal.age}</span>
+        </div>
+      </div>
+      <div className="mt-3 rounded-[8px] border border-[rgba(24,24,26,0.08)] bg-[#F2F0EC] px-3 py-2.5">
+        <div className="grid grid-cols-3 gap-2">
+          <div>
+            <div className="font-[Carlito] text-[10px] uppercase tracking-[0.08em] text-[#8A8A94]">Stop</div>
+            <div className="font-['DM_Mono'] text-[13px] text-[#C0392B]">${signal.stop.toFixed(2)}</div>
+          </div>
+          <div>
+            <div className="font-[Carlito] text-[10px] uppercase tracking-[0.08em] text-[#8A8A94]">Target</div>
+            <div className="font-['DM_Mono'] text-[13px] text-[#2E7D5A]">${signal.target.toFixed(2)}</div>
+          </div>
+          <div className="flex flex-col items-start justify-center">
+            <RRPill rr={signal.rr} />
+          </div>
+        </div>
+      </div>
+      <div className="mt-3 grid grid-cols-2 gap-2">
+        <button onClick={(e) => { e.stopPropagation(); onTake?.(signal.id); }} className="rounded-[8px] bg-[#3D5A7A] py-2.5 font-[Carlito] text-[12px] font-bold uppercase tracking-[0.1em] text-white active:bg-[#2c4361]">Take It</button>
+        <button onClick={(e) => { e.stopPropagation(); onPass?.(signal.id); }} className="rounded-[8px] border border-[#3D5A7A] bg-white py-2.5 font-[Carlito] text-[12px] font-bold uppercase tracking-[0.1em] text-[#3D5A7A] active:bg-[#EBF0F5]">Pass It</button>
+      </div>
+    </div>
+  </Card>
+);
+
+const PositionCard = ({ p }) => {
+  const up = p.pnlPct >= 0;
+  return (
+    <Card>
+      <div className="px-3.5 pb-3 pt-3.5">
+        <div className="flex items-start justify-between">
+          <div className="flex flex-col">
+            <div className="flex items-baseline gap-2">
+              <span className="font-['Playfair_Display'] text-[22px] font-bold leading-none text-[#18181A]">{p.ticker}</span>
+              <PositionBadge type={p.type} />
+            </div>
+            <div className="mt-[5px] font-[Carlito] text-[10px] font-bold uppercase tracking-[0.12em] text-[#5A7A9E]">{SETUP_LABELS[p.setup]}</div>
+          </div>
+          <div className="flex flex-col items-end">
+            <span className="font-['DM_Mono'] text-[16px] text-[#18181A]">${p.current.toFixed(2)}</span>
+            <span className={cls("font-['DM_Mono'] text-[11px]", up ? 'text-[#2E7D5A]' : 'text-[#C0392B]')}>
+              {up ? '+' : ''}{p.pnlPct.toFixed(2)}%
+            </span>
+          </div>
+        </div>
+        <div className="mt-3 rounded-[8px] border border-[rgba(24,24,26,0.08)] bg-[#F2F0EC] px-3 py-2.5">
+          <div className="grid grid-cols-4 gap-2">
+            <Stat label="Entry" value={`$${p.entry.toFixed(2)}`} />
+            <Stat label="Stop" value={`$${p.stop.toFixed(2)}`} valueClass="text-[#C0392B]" />
+            <Stat label="R" value={`${p.r >= 0 ? '+' : ''}${p.r.toFixed(2)}`} valueClass={up ? 'text-[#2E7D5A]' : 'text-[#C0392B]'} />
+            <Stat label="Days" value={`${p.daysHeld}d`} />
+          </div>
+        </div>
+      </div>
+    </Card>
+  );
+};
+
+const HintRow = ({ children }) => (
+  <div className="rounded-[10px] border border-dashed border-[rgba(24,24,26,0.14)] bg-[#FAFAF8] px-3 py-3 font-[Carlito] text-[12px] text-[#8A8A94]">
+    {children}
+  </div>
+);
+
+const SectionHeader = ({ title, right }) => (
+  <div className="mb-2 mt-1 flex items-center justify-between">
+    <div className="font-[Carlito] text-[10px] font-bold uppercase tracking-[0.14em] text-[#8A8A94]">{title}</div>
+    {right}
+  </div>
+);
+
+const AppBar = ({ title, italic, left, right }) => (
+  <div className="flex items-center justify-between border-b border-[rgba(24,24,26,0.08)] bg-[#FAFAF8] px-4 py-3">
+    <div className="flex w-8 justify-start">{left}</div>
+    <div className="flex flex-col items-center">
+      <div className="font-['Playfair_Display'] text-[18px] font-bold leading-none text-[#18181A]">
+        {title}
+        {italic && <span className="ml-1 font-['Playfair_Display'] italic text-[#3D5A7A]">{italic}</span>}
+      </div>
+    </div>
+    <div className="flex w-8 justify-end">{right}</div>
+  </div>
+);
+
+Object.assign(window, {
+  cls, Stat, StatStrip, RegimeBanner, RRPill, ConvictionTag, PositionBadge,
+  Card, SignalCard, PositionCard, HintRow, SectionHeader, AppBar, convictionStripe,
+});
