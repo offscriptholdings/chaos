@@ -2,11 +2,7 @@ const CACHE_NAME = 'chaos-v1';
 const ASSETS = [
   '/',
   '/index.html',
-  '/data.js',
-  '/icons.jsx',
-  '/components.jsx',
-  '/views.jsx',
-  '/app.jsx',
+  '/manifest.json',
 ];
 
 self.addEventListener('install', (e) => {
