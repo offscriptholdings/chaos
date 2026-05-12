@@ -210,12 +210,13 @@ chore/[TICKET-ID]-short-description
 
 **Commit format:**
 ```
-[type]([TICKET-ID]): short description
+[TICKET-ID] type: short description
 
-- bullet of what changed
-- bullet of what changed
+- what was built
+- what was changed
+- what was left out of scope
 ```
-Types: feat, fix, chore, refactor, style, docs
+Types: feat, fix, chore, refactor, test
 
 **PR conventions:**
 - Title: `[TICKET-ID]: Short description of what was built`
