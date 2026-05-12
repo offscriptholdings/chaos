@@ -3,14 +3,7 @@
   "nodes": [
     {
       "parameters": {
-        "rule": {
-          "interval": [
-            {
-              "field": "cronExpression",
-              "expression": "0 15 16 * * 1-5"
-            }
-          ]
-        }
+        "rule": { "interval": [{ "field": "cronExpression", "expression": "0 15 16 * * 1-5" }] }
       },
       "id": "2f516d34-9341-4d33-aae8-9b58a5ad7c69",
       "name": "Market Close Trigger",
@@ -31,7 +24,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const tickers = $input.item.json.tickers || [];\nconst candidates = tickers.filter(t => {\n  const price = t.day?.c || 0;\n  const volume = t.day?.v || 0;\n  return price >= 5 && volume >= 500000;\n}).slice(0, 40);\nreturn candidates.map(t => ({\n  json: {\n    ticker: t.ticker,\n    close: t.day?.c,\n    open: t.day?.o,\n    high: t.day?.h,\n    low: t.day?.l,\n    volume: t.day?.v,\n    prevClose: t.prevDay?.c,\n    change_pct: t.todaysChangePerc\n  }\n}));"
+        "jsCode": "const tickers = $input.item.json.tickers || [];\nconst candidates = tickers.filter(t => {\n  const price = t.day?.c || 0;\n  const volume = t.day?.v || 0;\n  return price >= 5 && volume >= 500000;\n}).sort((a, b) => (b.day?.v || 0) - (a.day?.v || 0)).slice(0, 40);\nreturn candidates.map(t => ({\n  json: {\n    ticker: t.ticker,\n    close: t.day?.c,\n    open: t.day?.o,\n    high: t.day?.h,\n    low: t.day?.l,\n    volume: t.day?.v,\n    prevClose: t.prevDay?.c,\n    change_pct: t.todaysChangePerc\n  }\n}));"
       },
       "id": "4416318b-64d0-4f76-88bf-83a9d34e8d21",
       "name": "Pre-Filter Candidates",
@@ -53,7 +46,7 @@
     {
       "parameters": {
         "mode": "runOnceForEachItem",
-        "jsCode": "const base = $('Pre-Filter Candidates').item.json;\nconst results = $input.item.json.results || [];\nif (results.length < 30) {\n  return { json: { ticker: base.ticker, sufficient_data: false } };\n}\nconst allBars = results.slice().reverse();\nconst bars = allBars.filter(b =>\n  b != null &&\n  typeof b.o === 'number' &&\n  typeof b.h === 'number' &&\n  typeof b.l === 'number' &&\n  typeof b.c === 'number' &&\n  typeof b.v === 'number'\n);\nif (bars.length < 30) {\n  return { json: { ticker: base.ticker, sufficient_data: false } };\n}\nconst n = bars.length;\nconst mean = arr => arr.reduce((a, b) => a + b, 0) / arr.length;\nconst fp = (v, d) => v != null && isFinite(v) ? parseFloat(v.toFixed(d)) : null;\nfunction calcEMASeries(closes, period, count) {\n  if (closes.length < 2) return [];\n  const k = 2 / (period + 1);\n  const seedLen = Math.min(period, closes.length);\n  let ema = mean(closes.slice(0, seedLen));\n  const series = [];\n  for (let i = seedLen; i < closes.length; i++) {\n    ema = closes[i] * k + ema * (1 - k);\n    if (i >= closes.length - count) series.push(ema);\n  }\n  if (series.length === 0) series.push(ema);\n  return series;\n}\nfunction calcRSISeries(closes, period, count) {\n  const series = [];\n  for (let end = closes.length - count; end <= closes.length - 1; end++) {\n    const slice = closes.slice(Math.max(0, end - period * 2), end + 1);\n    let gains = 0, losses = 0;\n    for (let i = 1; i <= period && i < slice.length; i++) {\n      const diff = slice[slice.length - i] - slice[slice.length - i - 1];\n      if (diff > 0) gains += diff; else losses -= diff;\n    }\n    const avgGain = gains / period;\n    const avgLoss = losses / period;\n    const rs = avgLoss === 0 ? 100 : avgGain / avgLoss;\n    series.push(fp(100 - 100 / (1 + rs), 2));\n  }\n  return series;\n}\nfunction calcMACDSeries(closes, fast, slow, signal, count) {\n  if (closes.length < slow + signal) return [];\n  const kFast = 2 / (fast + 1);\n  const kSlow = 2 / (slow + 1);\n  let ef = mean(closes.slice(0, fast));\n  let es = mean(closes.slice(0, slow));\n  const macdLines = [];\n  for (let i = 0; i < closes.length; i++) {\n    if (i >= fast) ef = closes[i] * kFast + ef * (1 - kFast);\n    if (i >= slow) {\n      es = closes[i] * kSlow + es * (1 - kSlow);\n      macdLines.push(ef - es);\n    }\n  }\n  if (macdLines.length < signal) return [];\n  const kSig = 2 / (signal + 1);\n  let sigEMA = mean(macdLines.slice(0, signal));\n  const sigSeries = [];\n  for (let i = signal; i < macdLines.length; i++) {\n    sigEMA = macdLines[i] * kSig + sigEMA * (1 - kSig);\n    if (i >= macdLines.length - count) sigSeries.push(sigEMA);\n  }\n  const macdTail = macdLines.slice(-count);\n  return macdTail.map((m, i) => ({\n    line: fp(m, 4),\n    signal: fp(sigSeries[i] || 0, 4),\n    histogram: fp(m - (sigSeries[i] || 0), 4)\n  }));\n}\nfunction calcBBSeries(closes, period, mult, count) {\n  const series = [];\n  for (let i = closes.length - count; i < closes.length; i++) {\n    if (i - period + 1 < 0) continue;\n    const slice = closes.slice(i - period + 1, i + 1);\n    const mid = mean(slice);\n    const std = Math.sqrt(mean(slice.map(c => Math.pow(c - mid, 2))));\n    const upper = mid + mult * std;\n    const lower = mid - mult * std;\n    const denom = upper - lower;\n    const width = mid > 0 ? (upper - lower) / mid : 0;\n    const pctB = denom !== 0 ? (closes[i] - lower) / denom : 0.5;\n    series.push({\n      upper: fp(upper, 4),\n      mid: fp(mid, 4),\n      lower: fp(lower, 4),\n      width: fp(width, 6),\n      pct_b: fp(pctB, 4)\n    });\n  }\n  return series;\n}\nfunction calcATR(bars, period) {\n  if (bars.length < 2) return 0;\n  const trs = bars.slice(1).map((b, i) => {\n    const prev = bars[i];\n    return Math.max(\n      (b.h || 0) - (b.l || 0),\n      Math.abs((b.h || 0) - (prev.c || 0)),\n      Math.abs((b.l || 0) - (prev.c || 0))\n    );\n  });\n  return fp(mean(trs.slice(-period)), 4);\n}\nconst closes = bars.map(b => b.c);\nconst COUNT = 6;\nconst ema200Series = calcEMASeries(closes, 200, 12);\nif (ema200Series.length < 1) {\n  return { json: { ticker: base.ticker, sufficient_data: false } };\n}\nconst ema200 = ema200Series[ema200Series.length - 1];\nconst ema200_10ago = ema200Series[Math.max(0, ema200Series.length - 11)];\nconst rsiSeries = calcRSISeries(closes, 14, COUNT);\nconst macdSeries = calcMACDSeries(closes, 12, 26, 9, COUNT);\nconst bbSeries = calcBBSeries(closes, 20, 2, COUNT);\nconst atr = calcATR(bars.slice(-16), 14);\nif (!macdSeries.length || !bbSeries.length || !rsiSeries.length) {\n  return { json: { ticker: base.ticker, sufficient_data: false } };\n}\nconst today = bars[n - 1];\nconst bb = bbSeries[bbSeries.length - 1];\nconst macd = macdSeries[macdSeries.length - 1];\nconst rsi = rsiSeries[rsiSeries.length - 1];\nconst volumes = bars.map(b => b.v || 0);\nconst volSlice = volumes.slice(-21, -1);\nconst volume_sma_20 = volSlice.length > 0 ? fp(mean(volSlice), 0) : 1;\nconst volume_vs_avg = fp((today.v || 0) / (volume_sma_20 || 1), 2);\nconst bb_width_20bar_min = fp(Math.min(...bbSeries.slice(-20).map(b => b.width || 0)), 6);\nconst closes50 = closes.slice(-52, -2);\nconst prior_50bar_high = closes50.length > 0 ? fp(Math.max(...closes50), 4) : fp(today.c, 4);\nconst closes20 = closes.slice(-22, -2);\nconst prior_20bar_low = closes20.length > 0 ? fp(Math.min(...closes20), 4) : fp(today.c, 4);\nconst highs20 = bars.slice(-22, -1).map(b => b.h || 0);\nconst high_20bar_max = highs20.length > 0 ? fp(Math.max(...highs20), 4) : fp(today.h, 4);\nconst recentHighs = closes.slice(-12);\nconst localHighIdx = recentHighs.reduce((maxI, c, i) => c > recentHighs[maxI] ? i : maxI, 0);\nconst bars_since_local_high = recentHighs.length - 1 - localHighIdx;\nconst lows3 = bars.slice(-3).map(b => b.l || Infinity);\nconst low_3bar = fp(Math.min(...lows3), 4);\nconst lows5 = bars.slice(-5).map(b => b.l || Infinity);\nconst low_5bar = fp(Math.min(...lows5), 4);\nconst macd_hist_last5 = macdSeries.slice(-5).map(m => m.histogram);\nconst macd_line_last5 = macdSeries.slice(-5).map(m => m.line);\nconst rsi_last5 = rsiSeries.slice(-5);\nconst volume_last5 = volumes.slice(-5);\nconst close_last5 = closes.slice(-5).map(c => fp(c, 4));\nconst low_last5 = bars.slice(-5).map(b => fp(b.l, 4));\nconst bb_pct_b_last3 = bbSeries.slice(-3).map(b => b.pct_b);\nreturn {\n  json: {\n    sufficient_data: true,\n    ticker: base.ticker,\n    signal_date: new Date().toISOString().split('T')[0],\n    close: fp(today.c, 4),\n    open: fp(today.o, 4),\n    high: fp(today.h, 4),\n    low: fp(today.l, 4),\n    volume_today: today.v || 0,\n    rsi_14: rsi,\n    macd_line: macd.line,\n    macd_signal: macd.signal,\n    macd_histogram: macd.histogram,\n    bb_upper: bb.upper,\n    bb_mid: bb.mid,\n    bb_lower: bb.lower,\n    bb_width: bb.width,\n    bb_pct_b: bb.pct_b,\n    bb_width_20bar_min: bb_width_20bar_min,\n    ema_200: fp(ema200, 4),\n    ema_200_10ago: fp(ema200_10ago, 4),\n    atr_14: atr,\n    volume_sma_20: volume_sma_20,\n    volume_vs_avg: volume_vs_avg,\n    low_3bar: low_3bar,\n    low_5bar: low_5bar,\n    prior_50bar_high: prior_50bar_high,\n    prior_20bar_low: prior_20bar_low,\n    high_20bar_max: high_20bar_max,\n    bars_since_local_high: bars_since_local_high,\n    macd_hist_last5: macd_hist_last5,\n    macd_line_last5: macd_line_last5,\n    rsi_last5: rsi_last5,\n    volume_last5: volume_last5,\n    close_last5: close_last5,\n    low_last5: low_last5,\n    bb_pct_b_last3: bb_pct_b_last3\n  }\n};"
+        "jsCode": "const base = $('Pre-Filter Candidates').item.json;\nconst results = $input.item.json.results || [];\nif (results.length < 30) return { json: { ticker: base.ticker, sufficient_data: false } };\nconst allBars = results.slice().reverse();\nconst bars = allBars.filter(b => b != null && typeof b.o === 'number' && typeof b.h === 'number' && typeof b.l === 'number' && typeof b.c === 'number' && typeof b.v === 'number');\nif (bars.length < 30) return { json: { ticker: base.ticker, sufficient_data: false } };\nconst n = bars.length;\nconst mean = arr => arr.reduce((a, b) => a + b, 0) / arr.length;\nconst fp = (v, d) => v != null && isFinite(v) ? parseFloat(v.toFixed(d)) : null;\nfunction calcEMASeries(closes, period, count) {\n  if (closes.length < 2) return [];\n  const k = 2 / (period + 1);\n  const seedLen = Math.min(period, closes.length);\n  let ema = mean(closes.slice(0, seedLen));\n  const series = [];\n  for (let i = seedLen; i < closes.length; i++) { ema = closes[i] * k + ema * (1 - k); if (i >= closes.length - count) series.push(ema); }\n  if (series.length === 0) series.push(ema);\n  return series;\n}\nfunction calcRSISeries(closes, period, count) {\n  const series = [];\n  for (let end = closes.length - count; end <= closes.length - 1; end++) {\n    const slice = closes.slice(Math.max(0, end - period * 2), end + 1);\n    let gains = 0, losses = 0;\n    for (let i = 1; i <= period && i < slice.length; i++) { const diff = slice[slice.length - i] - slice[slice.length - i - 1]; if (diff > 0) gains += diff; else losses -= diff; }\n    const rs = (losses / period) === 0 ? 100 : (gains / period) / (losses / period);\n    series.push(fp(100 - 100 / (1 + rs), 2));\n  }\n  return series;\n}\nfunction calcMACDSeries(closes, fast, slow, signal, count) {\n  if (closes.length < slow + signal) return [];\n  const kFast = 2 / (fast + 1), kSlow = 2 / (slow + 1);\n  let ef = mean(closes.slice(0, fast)), es = mean(closes.slice(0, slow));\n  const macdLines = [];\n  for (let i = 0; i < closes.length; i++) { if (i >= fast) ef = closes[i] * kFast + ef * (1 - kFast); if (i >= slow) { es = closes[i] * kSlow + es * (1 - kSlow); macdLines.push(ef - es); } }\n  if (macdLines.length < signal) return [];\n  const kSig = 2 / (signal + 1);\n  let sigEMA = mean(macdLines.slice(0, signal));\n  const sigSeries = [];\n  for (let i = signal; i < macdLines.length; i++) { sigEMA = macdLines[i] * kSig + sigEMA * (1 - kSig); if (i >= macdLines.length - count) sigSeries.push(sigEMA); }\n  return macdLines.slice(-count).map((m, i) => ({ line: fp(m, 4), signal: fp(sigSeries[i] || 0, 4), histogram: fp(m - (sigSeries[i] || 0), 4) }));\n}\nfunction calcBBSeries(closes, period, mult, count) {\n  const series = [];\n  for (let i = closes.length - count; i < closes.length; i++) {\n    if (i - period + 1 < 0) continue;\n    const slice = closes.slice(i - period + 1, i + 1);\n    const mid = mean(slice);\n    const std = Math.sqrt(mean(slice.map(c => Math.pow(c - mid, 2))));\n    const upper = mid + mult * std, lower = mid - mult * std, denom = upper - lower;\n    series.push({ upper: fp(upper, 4), mid: fp(mid, 4), lower: fp(lower, 4), width: fp(mid > 0 ? (upper - lower) / mid : 0, 6), pct_b: fp(denom !== 0 ? (closes[i] - lower) / denom : 0.5, 4) });\n  }\n  return series;\n}\nfunction calcATR(bars, period) {\n  if (bars.length < 2) return 0;\n  return fp(mean(bars.slice(1).map((b, i) => Math.max((b.h||0)-(b.l||0), Math.abs((b.h||0)-(bars[i].c||0)), Math.abs((b.l||0)-(bars[i].c||0)))).slice(-period)), 4);\n}\nconst closes = bars.map(b => b.c);\nconst COUNT = 6;\nconst ema200Series = calcEMASeries(closes, 200, 12);\nif (ema200Series.length < 1) return { json: { ticker: base.ticker, sufficient_data: false } };\nconst ema200 = ema200Series[ema200Series.length - 1];\nconst ema200_10ago = ema200Series[Math.max(0, ema200Series.length - 11)];\nconst rsiSeries = calcRSISeries(closes, 14, COUNT);\nconst macdSeries = calcMACDSeries(closes, 12, 26, 9, COUNT);\nconst bbSeries = calcBBSeries(closes, 20, 2, COUNT);\nconst atr = calcATR(bars.slice(-16), 14);\nif (!macdSeries.length || !bbSeries.length || !rsiSeries.length) return { json: { ticker: base.ticker, sufficient_data: false } };\nconst today = bars[n-1], bb = bbSeries[bbSeries.length-1], macd = macdSeries[macdSeries.length-1], rsi = rsiSeries[rsiSeries.length-1];\nconst volumes = bars.map(b => b.v || 0);\nconst volSlice = volumes.slice(-21, -1);\nconst volume_sma_20 = volSlice.length > 0 ? fp(mean(volSlice), 0) : 1;\nconst closes50 = closes.slice(-52, -2), closes20 = closes.slice(-22, -2), highs20 = bars.slice(-22,-1).map(b => b.h||0);\nconst recentHighs = closes.slice(-12);\nconst localHighIdx = recentHighs.reduce((maxI, c, i) => c > recentHighs[maxI] ? i : maxI, 0);\nreturn { json: {\n  sufficient_data: true, ticker: base.ticker,\n  signal_date: new Date().toISOString().split('T')[0],\n  close: fp(today.c,4), open: fp(today.o,4), high: fp(today.h,4), low: fp(today.l,4), volume_today: today.v||0,\n  rsi_14: rsi, macd_line: macd.line, macd_signal: macd.signal, macd_histogram: macd.histogram,\n  bb_upper: bb.upper, bb_mid: bb.mid, bb_lower: bb.lower, bb_width: bb.width, bb_pct_b: bb.pct_b,\n  bb_width_20bar_min: fp(Math.min(...bbSeries.slice(-20).map(b => b.width||0)), 6),\n  ema_200: fp(ema200,4), ema_200_10ago: fp(ema200_10ago,4), atr_14: atr,\n  volume_sma_20: volume_sma_20, volume_vs_avg: fp((today.v||0)/(volume_sma_20||1), 2),\n  low_3bar: fp(Math.min(...bars.slice(-3).map(b => b.l||Infinity)), 4),\n  low_5bar: fp(Math.min(...bars.slice(-5).map(b => b.l||Infinity)), 4),\n  prior_50bar_high: closes50.length > 0 ? fp(Math.max(...closes50),4) : fp(today.c,4),\n  prior_20bar_low: closes20.length > 0 ? fp(Math.min(...closes20),4) : fp(today.c,4),\n  high_20bar_max: highs20.length > 0 ? fp(Math.max(...highs20),4) : fp(today.h,4),\n  bars_since_local_high: recentHighs.length - 1 - localHighIdx,\n  macd_hist_last5: macdSeries.slice(-5).map(m => m.histogram),\n  macd_line_last5: macdSeries.slice(-5).map(m => m.line),\n  rsi_last5: rsiSeries.slice(-5),\n  low_last5: bars.slice(-5).map(b => fp(b.l,4)),\n  bb_pct_b_last3: bbSeries.slice(-3).map(b => b.pct_b)\n}};"
       },
       "id": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
       "name": "Compute Indicators",
@@ -65,14 +58,7 @@
       "parameters": {
         "conditions": {
           "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 1 },
-          "conditions": [
-            {
-              "leftValue": "={{ $json.sufficient_data }}",
-              "rightValue": "",
-              "operator": { "type": "boolean", "operation": "true", "singleValue": true },
-              "id": "aa111111-bb22-cc33-dd44-ee5555555555"
-            }
-          ],
+          "conditions": [{ "leftValue": "={{ $json.sufficient_data }}", "rightValue": "", "operator": { "type": "boolean", "operation": "true", "singleValue": true }, "id": "aa111111-bb22-cc33-dd44-ee5555555555" }],
           "combinator": "and"
         },
         "options": {}
@@ -85,57 +71,65 @@
     },
     {
       "parameters": {
-        "method": "POST",
-        "url": "https://api.anthropic.com/v1/messages",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            { "name": "x-api-key", "value": "={{ $vars.ANTHROPIC_API_KEY }}" },
-            { "name": "anthropic-version", "value": "2023-06-01" },
-            { "name": "content-type", "value": "application/json" }
-          ]
-        },
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={\n  \"model\": \"claude-sonnet-4-6\",\n  \"max_tokens\": 1024,\n  \"system\": \"You are a swing trade setup classifier for a personal trading system.\\n\\nYou will receive indicator data for a stock ticker. Your job is to:\\n1. Determine if the ticker qualifies for one of the 6 setup types below\\n2. If it qualifies, score conviction (High, Med, or Low)\\n3. Write a brief reasoning narrative (2-3 sentences)\\n\\nYou must respond ONLY with valid JSON. No preamble, no markdown, no explanation outside the JSON.\\n\\nSETUP TYPES AND GATES:\\n\\n=== momentum_continuation ===\\nRequired (all must be true):\\n- close > ema_200\\n- (ema_200 - ema_200_10ago) / ema_200_10ago >= 0.005\\n- low_5bar >= ema_mid - (1 * atr) AND low_5bar <= ema_mid + (0.5 * atr) AND close > ema_mid (where ema_mid = bb_mid = 20 SMA)\\n- At least 2 consecutive negative histogram bars in last 5, current histogram > 0 AND expanding (greater than prior bar)\\n- MACD line above signal for last 5 bars (preferred), OR crossed back above within last 2 bars after being below <= 3 bars\\n- rsi >= 45 AND rsi <= 65\\n- bars_since_local_high <= 10\\n- At least 2 of last 5 bars volume < 0.9 * volume_sma20. Current bar volume > 1.5 * volume_sma20\\n- Stop distance (close to recent swing low, approx close - low_5bar) <= 1.5 * atr\\nConviction Med: volume asymmetry confirmed AND MACD line clean throughout pullback\\nConviction High: Med met AND (bars_since_local_high <= 7 OR stop distance < 1.5 ATR)\\n\\n=== ema_pullback ===\\nRequired:\\n- abs(low_3bar - ema_200) / ema_200 <= 0.0175 AND close > ema_200\\n- (ema_200 - ema_200_10ago) / ema_200_10ago >= 0.0\\n- low_3bar < ema_200 AND close > ema_200\\n- macd_line < 0 AND histogram series increasing last 3 bars AND at least one negative in last 3\\n- rsi >= 35 AND rsi <= 50\\n- Most recent down-bars in last 10: volume declining toward the ema_200 test\\n- close <= bb_mid + (0.5 * atr)\\nConviction Med: rejection candle looks clean (hammer/engulfing) AND current bar volume > volume_sma20\\nConviction High: Med met AND (rsi 38-48 OR macd_histogram > 0 OR stop < 1.75 ATR)\\n\\n=== bb_squeeze_breakout ===\\nRequired:\\n- bb_width <= bb_width_20bar_min * 1.10\\n- close > bb_upper\\n- volume_vs_avg >= 1.75\\n- (macd_histogram > 0 AND macd_histogram > prior histogram) OR (macd_line crossed above signal today)\\n- rsi >= 55 AND rsi <= 72\\n- close > ema_200\\n- (high_20bar_max - close) / close > 0.03 OR close > high_20bar_max\\n- (close - bb_upper) <= 1.5 * atr\\nConviction Med: bb_width at exact 20-bar min OR volume_vs_avg >= 2.0\\nConviction High: Med met AND (bb_width at 60-bar low OR close in upper third of today range)\\n\\n=== bb_mean_reversion ===\\nRequired:\\n- min(bb_pct_b_last3) <= 0\\n- Exactly 1 or 2 consecutive bars with bb_pct_b <= 0 (3+ = downtrend, disqualify)\\n- On extreme bar: low < bb_lower AND close >= low + 0.67 * (high - low)\\n- bb_pct_b today > 0\\n- min(rsi_last5 last 3) < 35 AND rsi turning up (today > yesterday)\\n- macd negative or histogram negative AND histogram trending up last 3 AND at least one negative\\n- Volume: extreme bar volume > 1.5x avg (if extreme = today); if extreme was prior bar: that bar > 1.5x avg AND today < avg\\n- NOT confirmed downtrend: no lower swing highs AND lower swing lows in last 20 bars simultaneously\\n- (close - low_3bar) <= 1.5 * atr\\nConviction Med: bb_pct_b on extreme bar <= -0.05 AND candle close in top quarter\\nConviction High: Med met AND (bb_pct_b <= -0.10 OR min rsi < 30 OR volume spike > 2.0x)\\n\\n=== macd_crossover ===\\nRequired:\\n- MACD line crossed above signal line today OR yesterday (if yesterday, still above today)\\n- macd_line at cross bar <= 0\\n- histogram at cross bar > 0 AND histogram at prior bar <= 0\\n- close > ema_200 OR (close < ema_200 AND (ema_200 - ema_200_10ago)/ema_200_10ago >= -0.005)\\n- rsi at cross bar >= 40 AND <= 60\\n- bb_pct_b >= 0 AND <= 0.5\\n- volume at cross bar > 1.1 * volume_sma20\\n- (close - low_5bar) <= 2.0 * atr\\nConviction Med: macd_line declined 5+ of prior 10 bars before cross AND volume at cross > 1.5x\\nConviction High: Med met AND (close > ema_200 AND rsi 42-55 AND histogram flip >= 0.2 * abs(prior 10-bar min histogram))\\n\\n=== breakout_retest ===\\nRequired:\\n- prior_50bar_high identified (already provided)\\n- Original breakout bar existed: close came from below prior_50bar_high and broke above it on volume > 1.75x avg (evaluate from recent price action context)\\n- close >= prior_50bar_high AND (close - prior_50bar_high)/prior_50bar_high <= 0.02\\n- (low - prior_50bar_high)/prior_50bar_high >= -0.005\\n- low <= prior_50bar_high * 1.01 AND close > open AND close >= low + 0.5*(high-low)\\n- macd_line > 0 AND histogram >= -0.2 * abs(max histogram in context)\\n- rsi >= 45 AND rsi <= 65\\n- close > ema_200\\n- R:R: ((prior_50bar_high + (prior_50bar_high - prior_20bar_low)) - close) / (close - (prior_50bar_high - atr)) >= 2.0\\n- volume_vs_avg < 1.2 (quiet retest)\\nConviction Med: original breakout looked strong (volume 2x+) AND today volume < 0.8x avg\\nConviction High: Med met AND (close >= ema_200 * 1.05 OR close in upper third of today range)\\n\\nGENERAL FILTERS (already applied): price > $5, avg volume > 500k, no earnings within 3 days\\n\\nCONVICTION: Start Low if gates pass. Evaluate Med modifiers. Evaluate High modifiers.\\n\\nREASONING: 2-3 sentences. State setup, what confirmed it, what drove conviction. Be specific — name the values.\\n\\nRESPONSE FORMAT (JSON only, no other text):\\n{\\n  \\\"ticker\\\": \\\"string\\\",\\n  \\\"qualifies\\\": true | false,\\n  \\\"setup_type\\\": \\\"momentum_continuation\\\" | \\\"ema_pullback\\\" | \\\"bb_squeeze_breakout\\\" | \\\"bb_mean_reversion\\\" | \\\"macd_crossover\\\" | \\\"breakout_retest\\\" | null,\\n  \\\"conviction\\\": \\\"High\\\" | \\\"Med\\\" | \\\"Low\\\" | null,\\n  \\\"reasoning\\\": \\\"string or null\\\",\\n  \\\"entry_low\\\": number | null,\\n  \\\"entry_high\\\": number | null,\\n  \\\"stop\\\": number | null,\\n  \\\"target\\\": number | null\\n}\",\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": \"Evaluate this ticker for swing trade setup qualification.\\n\\nTicker: {{ $json.ticker }}\\nDate: {{ $json.signal_date }}\\n\\nPRICE DATA:\\nClose: {{ $json.close }}\\nOpen: {{ $json.open }}\\nHigh: {{ $json.high }}\\nLow: {{ $json.low }}\\n\\nINDICATORS:\\nRSI(14): {{ $json.rsi_14 }}\\nMACD line: {{ $json.macd_line }}\\nMACD signal: {{ $json.macd_signal }}\\nMACD histogram: {{ $json.macd_histogram }}\\nBB upper: {{ $json.bb_upper }}\\nBB mid (20 SMA): {{ $json.bb_mid }}\\nBB lower: {{ $json.bb_lower }}\\nBB width: {{ $json.bb_width }}\\nBB width 20-bar min: {{ $json.bb_width_20bar_min }}\\nBB %B today: {{ $json.bb_pct_b }}\\nBB %B last 3 bars (oldest to newest): {{ $json.bb_pct_b_last3 }}\\n200 EMA: {{ $json.ema_200 }}\\n200 EMA 10 bars ago: {{ $json.ema_200_10ago }}\\nATR(14): {{ $json.atr_14 }}\\nVolume today: {{ $json.volume_today }}\\nVolume 20-day SMA: {{ $json.volume_sma_20 }}\\nVolume vs avg (multiplier): {{ $json.volume_vs_avg }}\\n\\nRECENT BARS (last 5, oldest to newest):\\nMACD histogram: {{ $json.macd_hist_last5 }}\\nMACD line: {{ $json.macd_line_last5 }}\\nRSI: {{ $json.rsi_last5 }}\\nLow: {{ $json.low_last5 }}\\n\\nSTRUCTURE:\\nLow of last 3 bars: {{ $json.low_3bar }}\\nLow of last 5 bars: {{ $json.low_5bar }}\\nPrior 50-bar high (close-based): {{ $json.prior_50bar_high }}\\nPrior 20-bar low: {{ $json.prior_20bar_low }}\\n20-bar high (excluding today): {{ $json.high_20bar_max }}\\nBars since 20-bar local high: {{ $json.bars_since_local_high }}\"\n    }\n  ]\n}",
-        "options": {
-          "batching": {
-            "batch": {
-              "batchSize": 2,
-              "batchInterval": 2000
-            }
-          }
-        }
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Collect all passing ticker items into one array\nconst items = $input.all();\nreturn [{ json: { tickers: items.map(i => i.json) } }];"
       },
-      "id": "d4e5f6a7-b8c9-0123-defa-234567890123",
-      "name": "Claude — Classify Setup",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
+      "id": "f1a2b3c4-d5e6-7890-fabc-111222333444",
+      "name": "Aggregate Tickers",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
       "position": [-720, 112]
     },
     {
       "parameters": {
-        "mode": "runOnceForEachItem",
-        "jsCode": "const raw = $input.item.json.content?.[0]?.text || '';\nlet parsed;\ntry {\n  parsed = JSON.parse(raw);\n} catch (e) {\n  return { json: { qualifies: false, error: 'parse_failed', ticker: 'unknown', raw: raw.slice(0, 200) } };\n}\nconst indicators = $('Compute Indicators').item.json;\nparsed._indicators = indicators;\nreturn { json: parsed };"
+        "mode": "runOnceForAllItems",
+        "jsCode": "const tickers = $input.first().json.tickers || [];\nconst signal_date = tickers[0]?.signal_date || new Date().toISOString().split('T')[0];\nconst tickerData = tickers.map(t => ({\n  ticker: t.ticker,\n  close: t.close, open: t.open, high: t.high, low: t.low,\n  rsi: t.rsi_14, macd_line: t.macd_line, macd_hist: t.macd_histogram, macd_sig: t.macd_signal,\n  bb_upper: t.bb_upper, bb_mid: t.bb_mid, bb_lower: t.bb_lower,\n  bb_width: t.bb_width, bb_width_min: t.bb_width_20bar_min, bb_pct_b: t.bb_pct_b,\n  ema200: t.ema_200, ema200_10ago: t.ema_200_10ago, atr: t.atr_14,\n  vol_today: t.volume_today, vol_sma20: t.volume_sma_20, vol_vs_avg: t.volume_vs_avg,\n  macd_hist_last5: t.macd_hist_last5, macd_line_last5: t.macd_line_last5,\n  rsi_last5: t.rsi_last5, low_last5: t.low_last5, bb_pct_b_last3: t.bb_pct_b_last3,\n  low_3bar: t.low_3bar, low_5bar: t.low_5bar,\n  prior_50bar_high: t.prior_50bar_high, prior_20bar_low: t.prior_20bar_low,\n  high_20bar: t.high_20bar_max, bars_since_high: t.bars_since_local_high\n}));\n\nconst systemPrompt = 'You are a swing trade setup classifier. For EACH ticker in the input array determine: qualifies (true/false), setup_type, conviction (High/Med/Low), reasoning (2-3 sentences), entry_low, entry_high, stop, target. Respond ONLY with a JSON array, one object per ticker, same order as input. No preamble, no markdown.\\n\\nSETUP TYPES:\\nmomentum_continuation: close>ema200, ema slope>=0.5% over 10 bars, low_5bar near bb_mid +/-1 ATR, MACD hist positive+expanding, rsi 45-65, bars_since_high<=10, volume asymmetry, stop<=1.5 ATR.\\nema_pullback: low_3bar within 1.75% of ema200 AND reclaimed, MACD<0 hist improving, rsi 35-50, close<=bb_mid+0.5ATR.\\nbb_squeeze_breakout: bb_width<=bb_width_min*1.10, close>bb_upper, vol_vs_avg>=1.75, MACD hist expanding, rsi 55-72, close>ema200.\\nbb_mean_reversion: bb_pct_b<=0 on 1-2 bars only, extreme bar close in upper 67%, today bb_pct_b>0, rsi<35 turning up.\\nmacd_crossover: MACD crossed above signal today or yesterday at line<=0, rsi 40-60, bb_pct_b 0-0.5, vol>1.1x.\\nbreakout_retest: close within 2% above prior_50bar_high, vol<1.2x, macd_line>0, rsi 45-65, close>ema200, RR>=2.\\n\\nCONVICTION: Low=gates pass, Med=confirmation, High=Med+strong qualifier.\\n\\nRESPONSE FORMAT: [{\"ticker\":\"X\",\"qualifies\":false,\"setup_type\":null,\"conviction\":null,\"reasoning\":null,\"entry_low\":null,\"entry_high\":null,\"stop\":null,\"target\":null}]';\n\nconst requestBody = {\n  model: 'claude-sonnet-4-6',\n  max_tokens: 4096,\n  system: systemPrompt,\n  messages: [{ role: 'user', content: 'Date: ' + signal_date + '. Evaluate: ' + JSON.stringify(tickerData) }]\n};\n\nreturn [{ json: { request_body: JSON.stringify(requestBody), indicators: tickers } }];"
       },
-      "id": "e5f6a7b8-c9d0-1234-efab-345678901234",
-      "name": "Parse Claude Response",
+      "id": "a9b8c7d6-e5f4-3210-abcd-555666777888",
+      "name": "Build Batch Prompt",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [-480, 112]
     },
     {
       "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "x-api-key", "value": "={{ $vars.ANTHROPIC_API_KEY }}" },
+            { "name": "anthropic-version", "value": "2023-06-01" }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ $json.request_body }}",
+        "options": {}
+      },
+      "id": "d4e5f6a7-b8c9-0123-defa-234567890123",
+      "name": "Claude — Batch Classify",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-240, 112]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const raw = $input.first().json.content?.[0]?.text || '';\nconst indicators = $('Build Batch Prompt').first().json.indicators || [];\nlet results;\ntry {\n  const clean = raw.replace(/```json|```/g, '').trim();\n  results = JSON.parse(clean);\n} catch (e) {\n  return indicators.map(ind => ({ json: { qualifies: false, error: 'parse_failed', ticker: ind.ticker, _indicators: ind } }));\n}\nreturn results.map((result, i) => ({ json: { ...result, _indicators: indicators[i] || {} } }));"
+      },
+      "id": "e5f6a7b8-c9d0-1234-efab-345678901234",
+      "name": "Split Results",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [0, 112]
+    },
+    {
+      "parameters": {
         "conditions": {
           "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 1 },
-          "conditions": [
-            {
-              "leftValue": "={{ $json.qualifies }}",
-              "rightValue": "",
-              "operator": { "type": "boolean", "operation": "true", "singleValue": true },
-              "id": "bb222222-cc33-dd44-ee55-ff6666666666"
-            }
-          ],
+          "conditions": [{ "leftValue": "={{ $json.qualifies }}", "rightValue": "", "operator": { "type": "boolean", "operation": "true", "singleValue": true }, "id": "bb222222-cc33-dd44-ee55-ff6666666666" }],
           "combinator": "and"
         },
         "options": {}
@@ -144,7 +138,7 @@
       "name": "Qualifies?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
-      "position": [-240, 112]
+      "position": [240, 112]
     },
     {
       "parameters": {
@@ -170,26 +164,14 @@
       "name": "Write to chaos.signals",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.4,
-      "position": [0, -80],
-      "credentials": {
-        "supabaseApi": {
-          "id": "IoaagakstuDyI61D",
-          "name": "Supabase account"
-        }
-      }
+      "position": [480, 0],
+      "credentials": { "supabaseApi": { "id": "IoaagakstuDyI61D", "name": "Supabase account" } }
     },
     {
       "parameters": {
         "conditions": {
           "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 1 },
-          "conditions": [
-            {
-              "leftValue": "={{ $json.conviction }}",
-              "rightValue": "Low",
-              "operator": { "type": "string", "operation": "notEquals" },
-              "id": "cc333333-dd44-ee55-ff66-aa7777777777"
-            }
-          ],
+          "conditions": [{ "leftValue": "={{ $json.conviction }}", "rightValue": "Low", "operator": { "type": "string", "operation": "notEquals" }, "id": "cc333333-dd44-ee55-ff66-aa7777777777" }],
           "combinator": "and"
         },
         "options": {}
@@ -198,7 +180,7 @@
       "name": "High or Med Only?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
-      "position": [240, -80]
+      "position": [720, 0]
     },
     {
       "parameters": {
@@ -220,12 +202,10 @@
       "name": "Pushover Alert",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [480, -80]
+      "position": [960, 0]
     },
     {
-      "parameters": {
-        "jsCode": "return { json: { message: 'Skipped — insufficient data', ticker: $json.ticker } };"
-      },
+      "parameters": { "jsCode": "return { json: { message: 'Skipped — insufficient data', ticker: $json.ticker } };" },
       "id": "d0e1f2a3-b4c5-6789-defa-890123456789",
       "name": "Skip — Insufficient Data",
       "type": "n8n-nodes-base.code",
@@ -233,70 +213,32 @@
       "position": [-720, 320]
     },
     {
-      "parameters": {
-        "jsCode": "return { json: { message: 'No qualifying setup', ticker: $json.ticker } };"
-      },
+      "parameters": { "jsCode": "return { json: { message: 'No qualifying setup', ticker: $json.ticker } };" },
       "id": "e1f2a3b4-c5d6-7890-efab-901234567890",
       "name": "No Qualifying Setup",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [0, 160]
+      "position": [240, 320]
     }
   ],
   "pinData": {},
   "connections": {
-    "Market Close Trigger": {
-      "main": [[{ "node": "Polygon — Full Market Snapshot", "type": "main", "index": 0 }]]
-    },
-    "Polygon — Full Market Snapshot": {
-      "main": [[{ "node": "Pre-Filter Candidates", "type": "main", "index": 0 }]]
-    },
-    "Pre-Filter Candidates": {
-      "main": [[{ "node": "Polygon — Daily Bars (60)", "type": "main", "index": 0 }]]
-    },
-    "Polygon — Daily Bars (60)": {
-      "main": [[{ "node": "Compute Indicators", "type": "main", "index": 0 }]]
-    },
-    "Compute Indicators": {
-      "main": [[{ "node": "Sufficient Data?", "type": "main", "index": 0 }]]
-    },
-    "Sufficient Data?": {
-      "main": [
-        [{ "node": "Claude — Classify Setup", "type": "main", "index": 0 }],
-        [{ "node": "Skip — Insufficient Data", "type": "main", "index": 0 }]
-      ]
-    },
-    "Claude — Classify Setup": {
-      "main": [[{ "node": "Parse Claude Response", "type": "main", "index": 0 }]]
-    },
-    "Parse Claude Response": {
-      "main": [[{ "node": "Qualifies?", "type": "main", "index": 0 }]]
-    },
-    "Qualifies?": {
-      "main": [
-        [{ "node": "Write to chaos.signals", "type": "main", "index": 0 }],
-        [{ "node": "No Qualifying Setup", "type": "main", "index": 0 }]
-      ]
-    },
-    "Write to chaos.signals": {
-      "main": [[{ "node": "High or Med Only?", "type": "main", "index": 0 }]]
-    },
-    "High or Med Only?": {
-      "main": [
-        [{ "node": "Pushover Alert", "type": "main", "index": 0 }],
-        []
-      ]
-    }
+    "Market Close Trigger": { "main": [[{ "node": "Polygon — Full Market Snapshot", "type": "main", "index": 0 }]] },
+    "Polygon — Full Market Snapshot": { "main": [[{ "node": "Pre-Filter Candidates", "type": "main", "index": 0 }]] },
+    "Pre-Filter Candidates": { "main": [[{ "node": "Polygon — Daily Bars (60)", "type": "main", "index": 0 }]] },
+    "Polygon — Daily Bars (60)": { "main": [[{ "node": "Compute Indicators", "type": "main", "index": 0 }]] },
+    "Compute Indicators": { "main": [[{ "node": "Sufficient Data?", "type": "main", "index": 0 }]] },
+    "Sufficient Data?": { "main": [[{ "node": "Aggregate Tickers", "type": "main", "index": 0 }], [{ "node": "Skip — Insufficient Data", "type": "main", "index": 0 }]] },
+    "Aggregate Tickers": { "main": [[{ "node": "Build Batch Prompt", "type": "main", "index": 0 }]] },
+    "Build Batch Prompt": { "main": [[{ "node": "Claude — Batch Classify", "type": "main", "index": 0 }]] },
+    "Claude — Batch Classify": { "main": [[{ "node": "Qualifies?", "type": "main", "index": 0 }]] },
+    "Split Results": { "main": [[{ "node": "Qualifies?", "type": "main", "index": 0 }]] },
+    "Qualifies?": { "main": [[{ "node": "Write to chaos.signals", "type": "main", "index": 0 }], [{ "node": "No Qualifying Setup", "type": "main", "index": 0 }]] },
+    "Write to chaos.signals": { "main": [[{ "node": "High or Med Only?", "type": "main", "index": 0 }]] },
+    "High or Med Only?": { "main": [[{ "node": "Pushover Alert", "type": "main", "index": 0 }], []] }
   },
   "active": false,
-  "settings": {
-    "executionOrder": "v1",
-    "binaryMode": "separate",
-    "callerPolicy": "workflowsFromSameOwner",
-    "availableInMCP": false
-  },
-  "meta": {
-    "instanceId": "17cdd79a20cd8cd23ee9590043ece7d1806b23bbcf88f9717c1ad2afd6bb63d4"
-  },
+  "settings": { "executionOrder": "v1", "binaryMode": "separate", "callerPolicy": "workflowsFromSameOwner", "availableInMCP": false },
+  "meta": { "instanceId": "17cdd79a20cd8cd23ee9590043ece7d1806b23bbcf88f9717c1ad2afd6bb63d4" },
   "tags": []
 }
