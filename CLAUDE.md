@@ -184,6 +184,18 @@ Conviction levels: High, Med, Low. Gate-based (required numeric criteria) + AI c
 
 ---
 
+## Seeds
+
+`seeds/` contains version-controlled SQL for test data. Idempotent — re-running wipes prior `TEST_SEED_*` rows in FK-safe order before re-inserting, so it's safe to run any number of times.
+
+| File | Purpose |
+|---|---|
+| `seeds/test_signals.sql` | 6 open + 2 triggered + 2 expired signals, plus 2 trade_journal rows and 2 shadow_trades. Used by PWA wiring tickets (CRU-256/257/258, CRU-265-269) so they can render against real data shape without waiting on the n8n screener. All rows tagged `notes = 'TEST_SEED_2026-05-12'`. |
+
+To run: paste into the Supabase SQL editor for project `dbnkkournwhgnguugbnq` and execute. Verification SELECT at the bottom prints row counts per bucket.
+
+---
+
 ## Working conventions
 
 - Mock data lives in `data.js`. Replace per-tab with Supabase fetch calls — don't rip out mock data globally until the tab is wired.
