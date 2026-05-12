@@ -191,3 +191,39 @@ Conviction levels: High, Med, Low. Gate-based (required numeric criteria) + AI c
 - When adding Supabase calls to the PWA, use fetch() directly against the Supabase REST API — no JS client needed for a CDN-based setup. Pattern: `fetch('https://dbnkkournwhgnguugbnq.supabase.co/rest/v1/signals', { headers: { 'apikey': ANON_KEY, 'Accept-Profile': 'chaos' } })`
 - Anon key: get from Supabase dashboard — don't hardcode in CLAUDE.md
 - n8n workflow JSON lives in repo root. Always export and overwrite after changes.
+
+---
+
+## Foundry conventions
+
+This repo is managed by Foundry — David's autonomous build pipeline. Builder agent writes all code. Reviewer agent reviews all PRs. David only touches: morning approval, Vercel preview test, merge.
+
+**Branch naming:**
+```
+feature/[TICKET-ID]-short-description
+fix/[TICKET-ID]-short-description
+chore/[TICKET-ID]-short-description
+```
+- Lowercase only, hyphens not underscores
+- Short description max 4 words
+- Type prefix: feature (new functionality), fix (bug), chore (maintenance)
+
+**Commit format:**
+```
+[type]([TICKET-ID]): short description
+
+- bullet of what changed
+- bullet of what changed
+```
+Types: feat, fix, chore, refactor, style, docs
+
+**PR conventions:**
+- Title: `[TICKET-ID]: Short description of what was built`
+- Always opened as draft
+- Always labeled `foundry-build`
+- Body uses template at `~/Developer/foundry/templates/pr-template.md`
+
+**Builder reads before touching any code:**
+1. `~/Developer/foundry/specs/[TICKET-ID]-spec.md`
+2. This file (CLAUDE.md)
+3. `git log --oneline -20`
