@@ -8,37 +8,70 @@ import {
   IconArrowLeft, IconRefresh, IconPlay, IconCheck, IconChevronRight, IconSparkle,
 } from './icons.jsx';
 import {
-  SETUP_LABELS, POSITIONS, SHADOW_TRADES, JOURNAL, SETUPS, BACKTESTS, SENTIMENT, REGIME,
+  SETUP_LABELS, JOURNAL, SETUPS, BACKTESTS, SENTIMENT, REGIME,
   fetchSignals, fetchSignalById, fetchCriteria, parseThresholds,
+  fetchOpenPositions,
 } from './data.js';
-import { takeTrade, passTrade, fetchJournal, closeTrade } from './api/trades.js';
+import { takeTrade, passTrade, fetchJournal, closeTrade, fetchShadowTrades } from './api/trades.js';
 
 export const DashboardView = () => {
-  const livePnl = POSITIONS.filter(p => p.type === 'live').reduce((s, p) => s + p.pnlPct, 0);
+  const [positions, setPositions] = React.useState(null);
+  const [err, setErr] = React.useState(null);
+
+  React.useEffect(() => {
+    fetchOpenPositions()
+      .then(setPositions)
+      .catch(e => setErr(e.message));
+  }, []);
+
+  if (err) {
+    return (
+      <div className="p-4 font-[Carlito] text-[12px] text-[#C0392B]">
+        Failed to load positions: {err}
+      </div>
+    );
+  }
+
+  if (positions === null) {
+    return (
+      <div className="p-4 pb-24 font-[Carlito] text-[13px] text-[#8A8A94] text-center">Loading…</div>
+    );
+  }
+
+  const adapted = positions.map(p => ({
+    id: p.id,
+    ticker: p.signals?.ticker ?? '???',
+    type: p.trade_mode,
+    setup: p.signals?.setup_type ?? '',
+    entry: p.actual_entry,
+    stop: p.stop,
+    current: null, // TODO: needs live price feed (future ticket)
+    r: null,       // TODO: needs live price feed (future ticket)
+    daysHeld: Math.floor((Date.now() - new Date(p.date_opened).getTime()) / 86400000),
+    pnlPct: null,  // TODO: needs live price feed (future ticket)
+  }));
+
   return (
     <div className="flex flex-col gap-3 p-4 pb-24">
       <RegimeBanner state={REGIME.state} detail={REGIME.detail} />
       <StatStrip items={[
-        { label: 'Open', value: '2' },
-        { label: 'Today P/L', value: `+${livePnl.toFixed(2)}%`, valueClass: 'text-[#2E7D5A]' },
-        { label: 'Week R', value: '+2.4', valueClass: 'text-[#2E7D5A]' },
-        { label: 'Win %', value: '57' },
+        { label: 'Open', value: String(positions.length) },
+        { label: 'Today P/L', value: '—' }, // TODO: needs live price feed (future ticket)
+        { label: 'Week R', value: '—' },    // TODO: needs period math over closed trades (future ticket)
+        { label: 'Win %', value: '—' },     // TODO: needs closed-trade aggregates (future ticket)
       ]} />
       <SectionHeader title="Open Positions" />
       <div className="flex flex-col gap-2.5">
-        {POSITIONS.map((p) => <PositionCard key={p.id} p={p} />)}
+        {adapted.length === 0 ? (
+          <div className="py-6 text-center font-[Carlito] text-[12px] text-[#8A8A94]">No open positions</div>
+        ) : (
+          adapted.map(p => <PositionCard key={p.id} p={p} />)
+        )}
       </div>
-      <SectionHeader title="Today" right={<span className="font-['DM_Mono'] text-[10px] text-[#8A8A94]">3 setups · 1 taken</span>} />
+      <SectionHeader title="Today" right={<span className="font-['DM_Mono'] text-[10px] text-[#8A8A94]">— activity</span>} />
       <Card>
-        <div className="px-3.5 py-3">
-          <div className="flex items-center justify-between">
-            <div className="font-[Carlito] text-[12px] text-[#3C3C42]">Closed: <span className="text-[#2E7D5A]">MSFT +1.74R</span></div>
-            <span className="font-['DM_Mono'] text-[11px] text-[#8A8A94]">2:14p</span>
-          </div>
-          <div className="mt-2 flex items-center justify-between">
-            <div className="font-[Carlito] text-[12px] text-[#3C3C42]">Passed: <span className="text-[#8A8A94]">TSLA breakout-retest</span></div>
-            <span className="font-['DM_Mono'] text-[11px] text-[#8A8A94]">11:47a</span>
-          </div>
+        <div className="px-3.5 py-3 font-[Carlito] text-[12px] text-[#8A8A94] italic">
+          Activity wiring coming soon.
         </div>
       </Card>
     </div>
@@ -411,38 +444,102 @@ export const SignalDetailView = ({ signalId, back }) => {
   );
 };
 
-export const ShadowTradesView = () => (
-  <div className="flex flex-col gap-3 p-4 pb-24">
-    <SectionHeader title="Passed Signals · Would-have outcomes" />
-    {SHADOW_TRADES.map((t) => (
-      <Card key={t.id}>
-        <div className="px-3.5 pb-3 pt-3.5">
-          <div className="flex items-start justify-between">
-            <div className="flex flex-col">
-              <div className="flex items-baseline gap-2">
-                <span className="font-['Playfair_Display'] text-[20px] font-bold leading-none text-[#18181A]">{t.ticker}</span>
-                <span className="inline-flex items-center rounded-full bg-[#F2F0EC] px-2 py-[2px] font-[Carlito] text-[10px] font-bold uppercase tracking-[0.1em] text-[#8A8A94]">Passed</span>
+export const ShadowTradesView = () => {
+  const [trades, setTrades] = React.useState(null);
+  const [err, setErr] = React.useState(null);
+
+  React.useEffect(() => {
+    fetchShadowTrades()
+      .then(setTrades)
+      .catch(e => setErr(e.message));
+  }, []);
+
+  if (err) {
+    return (
+      <div className="p-4 font-[Carlito] text-[12px] text-[#C0392B]">Failed to load: {err}</div>
+    );
+  }
+
+  if (trades === null) {
+    return (
+      <div className="p-4 pb-24 font-[Carlito] text-[13px] text-[#8A8A94] text-center">Loading…</div>
+    );
+  }
+
+  const resolved = trades.filter(t => t.outcome_if_taken != null);
+  const won = resolved.filter(t => t.would_have_won);
+  const winPct = resolved.length > 0 ? Math.round((won.length / resolved.length) * 100) : null;
+  const avgR = won.length > 0
+    ? (won.reduce((s, t) => s + t.outcome_if_taken, 0) / won.length).toFixed(2)
+    : null;
+  const pending = trades.filter(t => t.outcome_if_taken == null).length;
+
+  return (
+    <div className="flex flex-col gap-3 p-4 pb-24">
+      <StatStrip items={[
+        { label: 'Passed', value: String(trades.length) },
+        { label: 'Would Win', value: winPct != null ? `${winPct}%` : '—' },
+        { label: 'Avg R', value: avgR != null ? `+${avgR}` : '—', valueClass: avgR != null ? 'text-[#2E7D5A]' : undefined },
+        { label: 'Pending', value: String(pending) },
+      ]} />
+      {trades.length === 0 ? (
+        <div className="py-6 text-center font-[Carlito] text-[12px] text-[#8A8A94]">No passed signals yet</div>
+      ) : (
+        trades.map(t => {
+          const ticker = t.signals?.ticker ?? '???';
+          const setup = t.signals?.setup_type ?? '';
+          const passedAt = new Date(t.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+          const isResolved = t.outcome_if_taken != null;
+
+          return (
+            <Card key={t.id}>
+              <div className="px-3.5 pb-3 pt-3.5">
+                <div className="flex items-start justify-between">
+                  <div className="flex flex-col">
+                    <div className="flex items-baseline gap-2">
+                      <span className="font-['Playfair_Display'] text-[20px] font-bold leading-none text-[#18181A]">{ticker}</span>
+                      <span className="inline-flex items-center rounded-full bg-[#F2F0EC] px-2 py-[2px] font-[Carlito] text-[10px] font-bold uppercase tracking-[0.1em] text-[#8A8A94]">Passed</span>
+                    </div>
+                    <div className="mt-[5px] font-[Carlito] text-[10px] font-bold uppercase tracking-[0.12em] text-[#5A7A9E]">{SETUP_LABELS[setup] ?? setup}</div>
+                  </div>
+                  <div className="flex flex-col items-end">
+                    {isResolved ? (
+                      <span className={cls("font-['DM_Mono'] text-[14px]", t.would_have_won ? 'text-[#2E7D5A]' : 'text-[#C0392B]')}>
+                        {t.would_have_won ? '+' : ''}{t.outcome_if_taken.toFixed(2)}R
+                      </span>
+                    ) : (
+                      <span className="font-[Carlito] text-[11px] italic text-[#8A8A94]">Resolving…</span>
+                    )}
+                    <span className="font-[Carlito] text-[10px] uppercase tracking-[0.08em] text-[#8A8A94]">{passedAt}</span>
+                  </div>
+                </div>
+                {isResolved && (
+                  <div className="mt-3 rounded-[8px] border border-[rgba(24,24,26,0.08)] bg-[#F2F0EC] px-3 py-2.5">
+                    <div className="grid grid-cols-2 gap-2">
+                      <Stat
+                        label="Would-have-R"
+                        value={`${t.would_have_won ? '+' : ''}${t.outcome_if_taken.toFixed(2)}`}
+                        valueClass={t.would_have_won ? 'text-[#2E7D5A]' : 'text-[#C0392B]'}
+                      />
+                      <Stat
+                        label="Outcome"
+                        value={t.would_have_won ? 'Target' : 'Stop'}
+                        valueClass={t.would_have_won ? 'text-[#2E7D5A]' : 'text-[#C0392B]'}
+                      />
+                    </div>
+                  </div>
+                )}
+                {t.reason_passed && (
+                  <p className="mt-2.5 font-[Carlito] text-[11px] italic leading-snug text-[#8A8A94]">{t.reason_passed}</p>
+                )}
               </div>
-              <div className="mt-[5px] font-[Carlito] text-[10px] font-bold uppercase tracking-[0.12em] text-[#5A7A9E]">{SETUP_LABELS[t.setup]}</div>
-            </div>
-            <div className="flex flex-col items-end">
-              <span className="font-['DM_Mono'] text-[14px] text-[#2E7D5A]">+{t.wouldR.toFixed(2)}R</span>
-              <span className="font-[Carlito] text-[10px] uppercase tracking-[0.08em] text-[#8A8A94]">{t.passedAt}</span>
-            </div>
-          </div>
-          <div className="mt-3 rounded-[8px] border border-[rgba(24,24,26,0.08)] bg-[#F2F0EC] px-3 py-2.5">
-            <div className="grid grid-cols-3 gap-2">
-              <Stat label="Entry" value={`$${t.entry.toFixed(2)}`} />
-              <Stat label="Target" value={`$${t.target.toFixed(2)}`} valueClass="text-[#2E7D5A]" />
-              <Stat label="Outcome" value={t.hit === 'target' ? 'Target' : 'Stop'} valueClass={t.hit === 'target' ? 'text-[#2E7D5A]' : 'text-[#C0392B]'} />
-            </div>
-          </div>
-          <p className="mt-2.5 font-[Carlito] text-[11px] italic leading-snug text-[#8A8A94]">{t.note}</p>
-        </div>
-      </Card>
-    ))}
-  </div>
-);
+            </Card>
+          );
+        })
+      )}
+    </div>
+  );
+};
 
 export const JournalView = () => {
   const [trades, setTrades] = React.useState(null);

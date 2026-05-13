@@ -121,7 +121,7 @@ export const SignalCard = ({ signal, onOpen, onTake, onPass }) => (
 );
 
 export const PositionCard = ({ p }) => {
-  const up = p.pnlPct >= 0;
+  const up = p.pnlPct != null && p.pnlPct >= 0;
   return (
     <Card>
       <div className="px-3.5 pb-3 pt-3.5">
@@ -131,20 +131,26 @@ export const PositionCard = ({ p }) => {
               <span className="font-['Playfair_Display'] text-[22px] font-bold leading-none text-[#18181A]">{p.ticker}</span>
               <PositionBadge type={p.type} />
             </div>
-            <div className="mt-[5px] font-[Carlito] text-[10px] font-bold uppercase tracking-[0.12em] text-[#5A7A9E]">{SETUP_LABELS[p.setup]}</div>
+            <div className="mt-[5px] font-[Carlito] text-[10px] font-bold uppercase tracking-[0.12em] text-[#5A7A9E]">{SETUP_LABELS[p.setup] ?? p.setup}</div>
           </div>
           <div className="flex flex-col items-end">
-            <span className="font-['DM_Mono'] text-[16px] text-[#18181A]">${p.current.toFixed(2)}</span>
-            <span className={cls("font-['DM_Mono'] text-[11px]", up ? 'text-[#2E7D5A]' : 'text-[#C0392B]')}>
-              {up ? '+' : ''}{p.pnlPct.toFixed(2)}%
+            <span className="font-['DM_Mono'] text-[16px] text-[#18181A]">
+              {p.current != null ? `$${p.current.toFixed(2)}` : '—'}
+            </span>
+            <span className={cls("font-['DM_Mono'] text-[11px]", p.pnlPct != null && p.pnlPct >= 0 ? 'text-[#2E7D5A]' : 'text-[#C0392B]')}>
+              {p.pnlPct != null ? `${p.pnlPct >= 0 ? '+' : ''}${p.pnlPct.toFixed(2)}%` : '—'}
             </span>
           </div>
         </div>
         <div className="mt-3 rounded-[8px] border border-[rgba(24,24,26,0.08)] bg-[#F2F0EC] px-3 py-2.5">
           <div className="grid grid-cols-4 gap-2">
-            <Stat label="Entry" value={`$${p.entry.toFixed(2)}`} />
-            <Stat label="Stop" value={`$${p.stop.toFixed(2)}`} valueClass="text-[#C0392B]" />
-            <Stat label="R" value={`${p.r >= 0 ? '+' : ''}${p.r.toFixed(2)}`} valueClass={up ? 'text-[#2E7D5A]' : 'text-[#C0392B]'} />
+            <Stat label="Entry" value={p.entry != null ? `$${p.entry.toFixed(2)}` : '—'} />
+            <Stat label="Stop" value={p.stop != null ? `$${p.stop.toFixed(2)}` : '—'} valueClass="text-[#C0392B]" />
+            <Stat
+              label="R"
+              value={p.r != null ? `${p.r >= 0 ? '+' : ''}${p.r.toFixed(2)}` : '—'}
+              valueClass={p.r != null && p.r >= 0 ? 'text-[#2E7D5A]' : 'text-[#C0392B]'}
+            />
             <Stat label="Days" value={`${p.daysHeld}d`} />
           </div>
         </div>
