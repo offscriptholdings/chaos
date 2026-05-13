@@ -9,7 +9,7 @@ import {
 } from './icons.jsx';
 import {
   SETUP_LABELS, POSITIONS, SHADOW_TRADES, JOURNAL, SETUPS, BACKTESTS, SENTIMENT, REGIME,
-  fetchSignals, fetchSignalById,
+  fetchSignals, fetchSignalById, fetchCriteria, parseThresholds,
 } from './data.js';
 
 export const DashboardView = () => {
@@ -350,19 +350,49 @@ export const BacktestView = () => {
 };
 
 export const CriteriaView = () => {
+  const [criteria, setCriteria] = React.useState(null);
   const [open, setOpen] = React.useState('momentum_continuation');
+
+  React.useEffect(() => {
+    fetchCriteria()
+      .then((rows) => setCriteria(rows))
+      .catch((err) => { console.error(err); setCriteria([]); });
+  }, []);
+
+  if (criteria === null) {
+    return (
+      <div className="flex flex-col gap-2.5 p-4 pb-24">
+        <SectionHeader title="Setup Criteria" />
+        <div className="font-[Carlito] text-[13px] text-[#8A8A94] p-4 text-center">Loading…</div>
+      </div>
+    );
+  }
+
+  if (criteria.length === 0) {
+    return (
+      <div className="flex flex-col gap-2.5 p-4 pb-24">
+        <SectionHeader title="Setup Criteria" />
+        <div className="font-[Carlito] text-[13px] text-[#8A8A94] p-4 text-center">No active criteria found.</div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col gap-2.5 p-4 pb-24">
       <SectionHeader title="Setup Criteria" />
-      {SETUPS.map((s) => {
-        const isOpen = open === s.key;
+      {criteria.map((row) => {
+        const isOpen = open === row.setup_type;
+        const thresholds = parseThresholds(row);
+        const blurb = row.thresholds?.regime_note ?? row.label ?? '';
         return (
-          <Card key={s.key} onClick={() => setOpen(isOpen ? null : s.key)}>
+          <Card key={row.setup_type} onClick={() => setOpen(isOpen ? null : row.setup_type)}>
             <div className="px-3.5 py-3">
               <div className="flex items-start justify-between">
                 <div className="flex flex-col">
-                  <div className="font-[Carlito] text-[10px] font-bold uppercase tracking-[0.12em] text-[#5A7A9E]">{SETUP_LABELS[s.key]}</div>
-                  <div className="mt-1 font-[Carlito] text-[12px] leading-snug text-[#3C3C42]">{s.blurb}</div>
+                  <div className="font-[Carlito] text-[10px] font-bold uppercase tracking-[0.12em] text-[#5A7A9E]">
+                    {SETUP_LABELS[row.setup_type] ?? row.setup_type}
+                  </div>
+                  <div className="mt-1 font-[Carlito] text-[12px] leading-snug text-[#3C3C42]">{blurb}</div>
                 </div>
                 <div className={cls('mt-0.5 transition-transform', isOpen && 'rotate-90')}>
                   <IconChevronRight size={16} stroke="#8A8A94" />
@@ -370,7 +400,7 @@ export const CriteriaView = () => {
               </div>
               {isOpen && (
                 <ul className="mt-3 flex flex-col gap-1.5 rounded-[8px] border border-[rgba(24,24,26,0.08)] bg-[#F2F0EC] px-3 py-2.5">
-                  {s.thresholds.map((t, i) => (
+                  {thresholds.map((t, i) => (
                     <li key={i} className="flex items-start gap-2 font-[Carlito] text-[12px] leading-snug text-[#3C3C42]">
                       <IconCheck size={13} stroke="#2E7D5A" className="mt-[3px] flex-shrink-0" />
                       <span className="flex-1 min-w-0">{t}</span>
