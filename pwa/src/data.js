@@ -147,38 +147,49 @@ export const JOURNAL = [
   },
 ];
 
-export const SETUPS = [
-  {
-    key: 'momentum_continuation',
-    blurb: 'Trend-day continuations off shallow consolidation.',
-    thresholds: ['EMA 20 / 50 stacked', 'Rel-vol >= 1.5x', 'RSI 55-70', 'No earnings within 2 days'],
-  },
-  {
-    key: 'ema_pullback',
-    blurb: 'Buy-the-dip to rising 20EMA on a healthy uptrend.',
-    thresholds: ['20EMA above 50EMA', 'Pullback <= 1x ATR', 'Reclaim of 5m VWAP', 'Rel-vol < 1.0x into pullback'],
-  },
-  {
-    key: 'bb_squeeze_breakout',
-    blurb: 'Volatility expansion out of 14-day low BB width.',
-    thresholds: ['BB width 14-day percentile <= 10%', 'Range bar >= 1.3x ATR', 'Rel-vol >= 1.8x', 'No major news pending'],
-  },
-  {
-    key: 'bb_mean_reversion',
-    blurb: 'Counter-trend tags of outer bands at exhaustion.',
-    thresholds: ['Tag of 2-sigma band', 'RSI < 30 or > 70', 'Half-size only', 'No active trend regime'],
-  },
-  {
-    key: 'macd_crossover',
-    blurb: 'Daily MACD signal cross with confirming volume.',
-    thresholds: ['Daily MACD signal cross', 'Hist > 0 and rising', 'Above 200 EMA', 'Rel-vol >= 1.2x'],
-  },
-  {
-    key: 'breakout_retest',
-    blurb: 'Re-entry into prior breakout level with hold.',
-    thresholds: ['Prior breakout <= 5 days old', 'Retest holds with reversal bar', 'Rel-vol >= 1.4x', 'Stop < 0.8x ATR'],
-  },
-];
+export async function fetchCriteria() {
+  const res = await fetch(
+    `${import.meta.env.VITE_SUPABASE_URL}/rest/v1/trading_criteria?is_active=eq.true&order=setup_type.asc`,
+    {
+      headers: {
+        apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
+        Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+        'Accept-Profile': 'chaos',
+      },
+    }
+  );
+  if (!res.ok) throw new Error(`fetchCriteria failed: ${res.status}`);
+  return res.json();
+}
+
+const titleCase = (snake) =>
+  snake.split('_').map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+
+export function parseThresholds(row) {
+  const t = row?.thresholds ?? {};
+  const out = [];
+
+  const gates = t.gates ?? {};
+  for (const [name, cfg] of Object.entries(gates)) {
+    let label = titleCase(name);
+    if (cfg && typeof cfg === 'object') {
+      if (typeof cfg.min === 'number' && typeof cfg.max === 'number') {
+        label += ` ${cfg.min}–${cfg.max}`;
+      } else if (typeof cfg.max_atr_multiplier === 'number') {
+        label += ` ≤ ${cfg.max_atr_multiplier}× ATR`;
+      } else if (typeof cfg.min_multiplier === 'number') {
+        label += ` ≥ ${cfg.min_multiplier}× avg`;
+      }
+    }
+    out.push(label);
+  }
+
+  if (t.targets && typeof t.targets.min_rr === 'number') {
+    out.push(`Min R/R ≥ ${t.targets.min_rr}`);
+  }
+
+  return out;
+}
 
 export const BACKTESTS = [
   { id: 'bt-1', name: 'EMA Pullback / SPY universe / 1y', winRate: 0.58, expectancy: 0.72, trades: 142, sharpe: 1.34 },
