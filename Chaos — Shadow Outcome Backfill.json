@@ -1,0 +1,681 @@
+{
+  "updatedAt": "2026-05-13T23:52:41.808Z",
+  "createdAt": "2026-05-13T23:52:41.808Z",
+  "id": "WFAVHfFGvBkM8dCp",
+  "name": "Chaos — Shadow Outcome Backfill",
+  "description": null,
+  "active": true,
+  "isArchived": false,
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 0 17 * * 1-5"
+            }
+          ]
+        }
+      },
+      "id": "a1111111-1111-1111-1111-111111111111",
+      "name": "Daily 5pm Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -2160,
+        112
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const d = new Date();\nd.setDate(d.getDate() - 14);\nconst cutoffDate = d.toISOString().split('T')[0];\nconst today = new Date().toISOString().split('T')[0];\nreturn [{ json: { cutoffDate, today } }];"
+      },
+      "id": "a2222222-2222-2222-2222-222222222222",
+      "name": "Compute Cutoff",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1920,
+        112
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://dbnkkournwhgnguugbnq.supabase.co/rest/v1/shadow_trades?select=*,signals!signal_id(ticker,signal_date,entry_mid,stop,r_ratio)&outcome_if_taken=is.null",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept-Profile",
+              "value": "chaos"
+            }
+          ]
+        },
+        "options": {},
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi"
+      },
+      "id": "a3333333-3333-3333-3333-333333333333",
+      "name": "Query Shadow Trades",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -1680,
+        112
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "IoaagakstuDyI61D",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const cutoffDate = $('Compute Cutoff').first().json.cutoffDate;\nconst rows = $input.all();\nconst filtered = rows.filter(r => {\n  const s = r.json.signals;\n  if (!s) return false;\n  if (!s.signal_date || s.signal_date < cutoffDate) return false;\n  if (s.entry_mid == null || s.stop == null || s.r_ratio == null) return false;\n  return true;\n});\nreturn filtered;"
+      },
+      "id": "a4444444-4444-4444-4444-444444444444",
+      "name": "Filter and Guard",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1440,
+        112
+      ]
+    },
+    {
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      },
+      "id": "a5555555-5555-5555-5555-555555555555",
+      "name": "SplitInBatches",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        -1200,
+        112
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.polygon.io/v2/aggs/ticker/{{ $json.signals.ticker }}/range/1/day/{{ $json.signals.signal_date }}/{{ $('Compute Cutoff').first().json.today }}?adjusted=true&sort=asc&apiKey=L8wCDo8xEcU_Pw_Dc5c8JrpdeGzFBtS7",
+        "options": {}
+      },
+      "id": "a6666666-6666-6666-6666-666666666666",
+      "name": "Polygon — Daily Bars",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -960,
+        112
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const row = $('SplitInBatches').item.json;\nconst s = row.signals;\nconst target = s.entry_mid + (s.entry_mid - s.stop) * s.r_ratio;\nconst barsData = $input.item.json.results ?? [];\n\nlet outcome = null;\nlet would_have_won = null;\n\nif ((s.entry_mid - s.stop) !== 0) {\n  for (const bar of barsData) {\n    if (bar.h >= target) {\n      outcome = s.r_ratio;\n      would_have_won = true;\n      break;\n    }\n    if (bar.l <= s.stop) {\n      outcome = -1.0;\n      would_have_won = false;\n      break;\n    }\n  }\n\n  if (outcome === null && barsData.length >= 10) {\n    const lastClose = barsData[barsData.length - 1].c;\n    outcome = (lastClose - s.entry_mid) / (s.entry_mid - s.stop);\n    would_have_won = outcome > 0;\n  }\n}\n\nreturn [{\n  json: {\n    id: row.id,\n    outcome_if_taken: outcome,\n    would_have_won,\n    should_patch: outcome !== null,\n  }\n}];"
+      },
+      "id": "a7777777-7777-7777-7777-777777777777",
+      "name": "Replay Logic",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -720,
+        112
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.should_patch }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              },
+              "id": "b1111111-1111-1111-1111-111111111111"
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "a8888888-8888-8888-8888-888888888888",
+      "name": "Skip Unresolved?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -480,
+        112
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://dbnkkournwhgnguugbnq.supabase.co/rest/v1/shadow_trades?id=eq.{{ $json.id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=minimal"
+            },
+            {
+              "name": "Content-Profile",
+              "value": "chaos"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"outcome_if_taken\": {{ $json.outcome_if_taken }},\n  \"would_have_won\": {{ $json.would_have_won }}\n}",
+        "options": {},
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi"
+      },
+      "id": "a9999999-9999-9999-9999-999999999999",
+      "name": "PATCH Shadow Trade",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -240,
+        16
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "IoaagakstuDyI61D",
+          "name": "Supabase account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Daily 5pm Trigger": {
+      "main": [
+        [
+          {
+            "node": "Compute Cutoff",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Compute Cutoff": {
+      "main": [
+        [
+          {
+            "node": "Query Shadow Trades",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Query Shadow Trades": {
+      "main": [
+        [
+          {
+            "node": "Filter and Guard",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter and Guard": {
+      "main": [
+        [
+          {
+            "node": "SplitInBatches",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "SplitInBatches": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Polygon — Daily Bars",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Polygon — Daily Bars": {
+      "main": [
+        [
+          {
+            "node": "Replay Logic",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Replay Logic": {
+      "main": [
+        [
+          {
+            "node": "Skip Unresolved?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Skip Unresolved?": {
+      "main": [
+        [
+          {
+            "node": "PATCH Shadow Trade",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "SplitInBatches",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "PATCH Shadow Trade": {
+      "main": [
+        [
+          {
+            "node": "SplitInBatches",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  },
+  "staticData": {
+    "node:Daily 5pm Trigger": {
+      "recurrenceRules": []
+    }
+  },
+  "meta": null,
+  "pinData": null,
+  "versionId": "a6f54f12-f001-4e63-90af-212e76a40f5d",
+  "activeVersionId": "a6f54f12-f001-4e63-90af-212e76a40f5d",
+  "versionCounter": 4,
+  "triggerCount": 1,
+  "shared": [
+    {
+      "updatedAt": "2026-05-13T23:52:41.813Z",
+      "createdAt": "2026-05-13T23:52:41.813Z",
+      "role": "workflow:owner",
+      "workflowId": "WFAVHfFGvBkM8dCp",
+      "projectId": "U5sMFLlk8DLWrCUo",
+      "project": {
+        "updatedAt": "2026-04-16T01:24:09.616Z",
+        "createdAt": "2026-04-16T01:20:32.017Z",
+        "id": "U5sMFLlk8DLWrCUo",
+        "name": "David Erickson <erickson0511@gmail.com>",
+        "type": "personal",
+        "icon": null,
+        "description": null,
+        "creatorId": "96708591-29a1-4c69-b415-9521eca4af73"
+      }
+    }
+  ],
+  "tags": [],
+  "activeVersion": {
+    "updatedAt": "2026-05-13T23:52:41.822Z",
+    "createdAt": "2026-05-13T23:52:41.822Z",
+    "versionId": "a6f54f12-f001-4e63-90af-212e76a40f5d",
+    "workflowId": "WFAVHfFGvBkM8dCp",
+    "nodes": [
+      {
+        "parameters": {
+          "rule": {
+            "interval": [
+              {
+                "field": "cronExpression",
+                "expression": "0 0 17 * * 1-5"
+              }
+            ]
+          }
+        },
+        "id": "a1111111-1111-1111-1111-111111111111",
+        "name": "Daily 5pm Trigger",
+        "type": "n8n-nodes-base.scheduleTrigger",
+        "typeVersion": 1.2,
+        "position": [
+          -2160,
+          112
+        ]
+      },
+      {
+        "parameters": {
+          "jsCode": "const d = new Date();\nd.setDate(d.getDate() - 14);\nconst cutoffDate = d.toISOString().split('T')[0];\nconst today = new Date().toISOString().split('T')[0];\nreturn [{ json: { cutoffDate, today } }];"
+        },
+        "id": "a2222222-2222-2222-2222-222222222222",
+        "name": "Compute Cutoff",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          -1920,
+          112
+        ]
+      },
+      {
+        "parameters": {
+          "url": "https://dbnkkournwhgnguugbnq.supabase.co/rest/v1/shadow_trades?select=*,signals!signal_id(ticker,signal_date,entry_mid,stop,r_ratio)&outcome_if_taken=is.null",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Accept-Profile",
+                "value": "chaos"
+              }
+            ]
+          },
+          "options": {},
+          "authentication": "predefinedCredentialType",
+          "nodeCredentialType": "supabaseApi"
+        },
+        "id": "a3333333-3333-3333-3333-333333333333",
+        "name": "Query Shadow Trades",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          -1680,
+          112
+        ],
+        "credentials": {
+          "supabaseApi": {
+            "id": "IoaagakstuDyI61D",
+            "name": "Supabase account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "mode": "runOnceForAllItems",
+          "jsCode": "const cutoffDate = $('Compute Cutoff').first().json.cutoffDate;\nconst rows = $input.all();\nconst filtered = rows.filter(r => {\n  const s = r.json.signals;\n  if (!s) return false;\n  if (!s.signal_date || s.signal_date < cutoffDate) return false;\n  if (s.entry_mid == null || s.stop == null || s.r_ratio == null) return false;\n  return true;\n});\nreturn filtered;"
+        },
+        "id": "a4444444-4444-4444-4444-444444444444",
+        "name": "Filter and Guard",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          -1440,
+          112
+        ]
+      },
+      {
+        "parameters": {
+          "batchSize": 1,
+          "options": {}
+        },
+        "id": "a5555555-5555-5555-5555-555555555555",
+        "name": "SplitInBatches",
+        "type": "n8n-nodes-base.splitInBatches",
+        "typeVersion": 3,
+        "position": [
+          -1200,
+          112
+        ]
+      },
+      {
+        "parameters": {
+          "url": "=https://api.polygon.io/v2/aggs/ticker/{{ $json.signals.ticker }}/range/1/day/{{ $json.signals.signal_date }}/{{ $('Compute Cutoff').first().json.today }}?adjusted=true&sort=asc&apiKey=L8wCDo8xEcU_Pw_Dc5c8JrpdeGzFBtS7",
+          "options": {}
+        },
+        "id": "a6666666-6666-6666-6666-666666666666",
+        "name": "Polygon — Daily Bars",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          -960,
+          112
+        ],
+        "onError": "continueRegularOutput"
+      },
+      {
+        "parameters": {
+          "jsCode": "const row = $('SplitInBatches').item.json;\nconst s = row.signals;\nconst target = s.entry_mid + (s.entry_mid - s.stop) * s.r_ratio;\nconst barsData = $input.item.json.results ?? [];\n\nlet outcome = null;\nlet would_have_won = null;\n\nif ((s.entry_mid - s.stop) !== 0) {\n  for (const bar of barsData) {\n    if (bar.h >= target) {\n      outcome = s.r_ratio;\n      would_have_won = true;\n      break;\n    }\n    if (bar.l <= s.stop) {\n      outcome = -1.0;\n      would_have_won = false;\n      break;\n    }\n  }\n\n  if (outcome === null && barsData.length >= 10) {\n    const lastClose = barsData[barsData.length - 1].c;\n    outcome = (lastClose - s.entry_mid) / (s.entry_mid - s.stop);\n    would_have_won = outcome > 0;\n  }\n}\n\nreturn [{\n  json: {\n    id: row.id,\n    outcome_if_taken: outcome,\n    would_have_won,\n    should_patch: outcome !== null,\n  }\n}];"
+        },
+        "id": "a7777777-7777-7777-7777-777777777777",
+        "name": "Replay Logic",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          -720,
+          112
+        ]
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "strict",
+              "version": 1
+            },
+            "conditions": [
+              {
+                "leftValue": "={{ $json.should_patch }}",
+                "rightValue": "",
+                "operator": {
+                  "type": "boolean",
+                  "operation": "true",
+                  "singleValue": true
+                },
+                "id": "b1111111-1111-1111-1111-111111111111"
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        },
+        "id": "a8888888-8888-8888-8888-888888888888",
+        "name": "Skip Unresolved?",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2,
+        "position": [
+          -480,
+          112
+        ]
+      },
+      {
+        "parameters": {
+          "method": "PATCH",
+          "url": "=https://dbnkkournwhgnguugbnq.supabase.co/rest/v1/shadow_trades?id=eq.{{ $json.id }}",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "name": "Prefer",
+                "value": "return=minimal"
+              },
+              {
+                "name": "Content-Profile",
+                "value": "chaos"
+              }
+            ]
+          },
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={\n  \"outcome_if_taken\": {{ $json.outcome_if_taken }},\n  \"would_have_won\": {{ $json.would_have_won }}\n}",
+          "options": {},
+          "authentication": "predefinedCredentialType",
+          "nodeCredentialType": "supabaseApi"
+        },
+        "id": "a9999999-9999-9999-9999-999999999999",
+        "name": "PATCH Shadow Trade",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          -240,
+          16
+        ],
+        "credentials": {
+          "supabaseApi": {
+            "id": "IoaagakstuDyI61D",
+            "name": "Supabase account"
+          }
+        }
+      }
+    ],
+    "connections": {
+      "Daily 5pm Trigger": {
+        "main": [
+          [
+            {
+              "node": "Compute Cutoff",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Compute Cutoff": {
+        "main": [
+          [
+            {
+              "node": "Query Shadow Trades",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Query Shadow Trades": {
+        "main": [
+          [
+            {
+              "node": "Filter and Guard",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Filter and Guard": {
+        "main": [
+          [
+            {
+              "node": "SplitInBatches",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "SplitInBatches": {
+        "main": [
+          [],
+          [
+            {
+              "node": "Polygon — Daily Bars",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Polygon — Daily Bars": {
+        "main": [
+          [
+            {
+              "node": "Replay Logic",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Replay Logic": {
+        "main": [
+          [
+            {
+              "node": "Skip Unresolved?",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Skip Unresolved?": {
+        "main": [
+          [
+            {
+              "node": "PATCH Shadow Trade",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "SplitInBatches",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "PATCH Shadow Trade": {
+        "main": [
+          [
+            {
+              "node": "SplitInBatches",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "authors": "David Erickson",
+    "name": null,
+    "description": null,
+    "autosaved": false,
+    "workflowPublishHistory": [
+      {
+        "createdAt": "2026-05-13T23:52:56.648Z",
+        "id": 91,
+        "workflowId": "WFAVHfFGvBkM8dCp",
+        "versionId": "a6f54f12-f001-4e63-90af-212e76a40f5d",
+        "event": "activated",
+        "userId": "96708591-29a1-4c69-b415-9521eca4af73"
+      }
+    ]
+  }
+}
