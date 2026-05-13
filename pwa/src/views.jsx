@@ -8,7 +8,8 @@ import {
   IconArrowLeft, IconRefresh, IconPlay, IconCheck, IconChevronRight, IconSparkle,
 } from './icons.jsx';
 import {
-  SETUP_LABELS, SIGNALS, POSITIONS, SHADOW_TRADES, JOURNAL, SETUPS, BACKTESTS, SENTIMENT, REGIME,
+  SETUP_LABELS, POSITIONS, SHADOW_TRADES, JOURNAL, SETUPS, BACKTESTS, SENTIMENT, REGIME,
+  fetchSignals, fetchSignalById,
 } from './data.js';
 
 export const DashboardView = () => {
@@ -43,25 +44,85 @@ export const DashboardView = () => {
   );
 };
 
-export const SignalQueueView = ({ openSignal }) => (
-  <div className="flex flex-col gap-3 p-4 pb-24">
-    <SectionHeader
-      title={`Open Signals · ${SIGNALS.length}`}
-      right={<button className="font-[Carlito] text-[10px] font-bold uppercase tracking-[0.1em] text-[#3D5A7A]">Filter</button>}
-    />
-    <div className="flex flex-col gap-2.5">
-      {SIGNALS.map((s) => (
-        <SignalCard key={s.id} signal={s} onOpen={openSignal}
-          onTake={(id) => console.log('Take', id)}
-          onPass={(id) => console.log('Pass', id)}
-        />
-      ))}
+export const SignalQueueView = ({ openSignal }) => {
+  const [signals, setSignals] = React.useState(null);
+
+  React.useEffect(() => {
+    fetchSignals()
+      .then(setSignals)
+      .catch((err) => { console.error(err); setSignals([]); });
+  }, []);
+
+  if (signals === null) {
+    return (
+      <div className="flex flex-col gap-3 p-4 pb-24">
+        <SectionHeader title="Open Signals" />
+        <div className="font-[Carlito] text-[13px] text-[#8A8A94] p-4 text-center">Loading…</div>
+      </div>
+    );
+  }
+
+  if (signals.length === 0) {
+    return (
+      <div className="flex flex-col gap-3 p-4 pb-24">
+        <SectionHeader title="Open Signals · 0" />
+        <div className="font-[Carlito] text-[13px] text-[#8A8A94] p-4 text-center">No open signals.</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-3 p-4 pb-24">
+      <SectionHeader
+        title={`Open Signals · ${signals.length}`}
+        right={<button className="font-[Carlito] text-[10px] font-bold uppercase tracking-[0.1em] text-[#3D5A7A]">Filter</button>}
+      />
+      <div className="flex flex-col gap-2.5">
+        {signals.map((s) => (
+          <SignalCard key={s.id} signal={s} onOpen={openSignal}
+            onTake={(id) => console.log('Take', id)}
+            onPass={(id) => console.log('Pass', id)}
+          />
+        ))}
+      </div>
     </div>
-  </div>
-);
+  );
+};
 
 export const SignalDetailView = ({ signalId, back }) => {
-  const s = SIGNALS.find((x) => x.id === signalId) || SIGNALS[0];
+  const [signal, setSignal] = React.useState(null);
+  const [notFound, setNotFound] = React.useState(false);
+
+  React.useEffect(() => {
+    if (!signalId) return;
+    fetchSignalById(signalId)
+      .then((s) => { if (s) setSignal(s); else setNotFound(true); })
+      .catch((err) => { console.error(err); setNotFound(true); });
+  }, [signalId]);
+
+  if (notFound) {
+    return (
+      <div className="flex flex-col gap-3 p-4 pb-24">
+        <button onClick={back} className="flex items-center gap-1 self-start font-[Carlito] text-[11px] font-bold uppercase tracking-[0.1em] text-[#3D5A7A]">
+          <IconArrowLeft size={14} /> Back to Queue
+        </button>
+        <div className="font-[Carlito] text-[13px] text-[#8A8A94] p-4 text-center">Signal not found.</div>
+      </div>
+    );
+  }
+
+  if (!signal) {
+    return (
+      <div className="flex flex-col gap-3 p-4 pb-24">
+        <button onClick={back} className="flex items-center gap-1 self-start font-[Carlito] text-[11px] font-bold uppercase tracking-[0.1em] text-[#3D5A7A]">
+          <IconArrowLeft size={14} /> Back to Queue
+        </button>
+        <div className="font-[Carlito] text-[13px] text-[#8A8A94] p-4 text-center">Loading…</div>
+      </div>
+    );
+  }
+
+  const s = signal;
   return (
     <div className="flex flex-col gap-3 p-4 pb-24">
       <button onClick={back} className="flex items-center gap-1 self-start font-[Carlito] text-[11px] font-bold uppercase tracking-[0.1em] text-[#3D5A7A]">
