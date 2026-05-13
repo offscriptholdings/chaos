@@ -9,92 +9,53 @@ export const SETUP_LABELS = {
   breakout_retest: 'Breakout Retest',
 };
 
-export const SIGNALS = [
-  {
-    id: 'sig-nvda-1',
-    ticker: 'NVDA',
-    setup: 'momentum_continuation',
-    conviction: 'High',
+function normalizeSignal(row) {
+  return {
+    id: row.id,
+    ticker: row.ticker,
+    setup: row.setup_type,
+    conviction: row.conviction,
     direction: 'long',
-    entry: 482.40,
-    stop: 471.10,
-    target: 512.80,
-    rr: 2.69,
-    age: '4m ago',
-    note: 'Tagged on 5m close above prior consolidation; volume confirmed at the breakout bar.',
-    indicators: [
-      { label: 'RSI (14)', value: '63.2', state: 'ok' },
-      { label: 'MACD hist', value: '+0.84', state: 'ok' },
-      { label: 'EMA 20 / 50', value: 'Stacked', state: 'ok' },
-      { label: 'ATR (14)', value: '11.4', state: 'neutral' },
-      { label: 'Rel. Vol', value: '1.84x', state: 'ok' },
-      { label: 'Spread', value: '2bp', state: 'ok' },
-    ],
-  },
-  {
-    id: 'sig-msft-1',
-    ticker: 'MSFT',
-    setup: 'ema_pullback',
-    conviction: 'Med',
-    direction: 'long',
-    entry: 412.05,
-    stop: 406.20,
-    target: 425.60,
-    rr: 2.31,
-    age: '11m ago',
-    note: 'Pullback into rising 20EMA on lower volume; trigger on reclaim of 5m VWAP.',
-    indicators: [
-      { label: 'RSI (14)', value: '54.8', state: 'neutral' },
-      { label: 'MACD hist', value: '+0.12', state: 'neutral' },
-      { label: 'EMA 20 / 50', value: 'Stacked', state: 'ok' },
-      { label: 'ATR (14)', value: '4.9', state: 'neutral' },
-      { label: 'Rel. Vol', value: '0.92x', state: 'warn' },
-      { label: 'Spread', value: '1bp', state: 'ok' },
-    ],
-  },
-  {
-    id: 'sig-amd-1',
-    ticker: 'AMD',
-    setup: 'bb_squeeze_breakout',
-    conviction: 'High',
-    direction: 'long',
-    entry: 168.85,
-    stop: 164.40,
-    target: 180.10,
-    rr: 2.53,
-    age: '23m ago',
-    note: 'Bands at 18-day low width; breakout candle expanded range 1.4x ATR.',
-    indicators: [
-      { label: 'BB Width', value: '0.038', state: 'ok' },
-      { label: 'RSI (14)', value: '61.0', state: 'ok' },
-      { label: 'MACD hist', value: '+0.31', state: 'ok' },
-      { label: 'ATR (14)', value: '5.1', state: 'neutral' },
-      { label: 'Rel. Vol', value: '2.10x', state: 'ok' },
-      { label: 'Spread', value: '1bp', state: 'ok' },
-    ],
-  },
-  {
-    id: 'sig-aapl-1',
-    ticker: 'AAPL',
-    setup: 'bb_mean_reversion',
-    conviction: 'Low',
-    direction: 'long',
-    entry: 188.40,
-    stop: 185.90,
-    target: 193.20,
-    rr: 1.92,
-    age: '38m ago',
-    note: 'Tag of lower band on RSI div; counter-trend, half-size only per playbook.',
-    indicators: [
-      { label: 'RSI (14)', value: '32.4', state: 'ok' },
-      { label: 'MACD hist', value: '-0.18', state: 'warn' },
-      { label: 'EMA 20 / 50', value: 'Inverted', state: 'warn' },
-      { label: 'ATR (14)', value: '2.8', state: 'neutral' },
-      { label: 'Rel. Vol', value: '1.05x', state: 'neutral' },
-      { label: 'Spread', value: '1bp', state: 'ok' },
-    ],
-  },
-];
+    entry: row.entry_low ?? row.price_at_signal,
+    stop: row.stop,
+    target: row.target,
+    r_ratio: row.r_ratio ?? null,
+    signal_date: row.signal_date,
+    indicator_snapshot: row.indicator_snapshot ?? null,
+  };
+}
+
+export async function fetchSignals() {
+  const res = await fetch(
+    `${import.meta.env.VITE_SUPABASE_URL}/rest/v1/signals?status=eq.open&order=created_at.desc&limit=50`,
+    {
+      headers: {
+        apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
+        Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+        'Accept-Profile': 'chaos',
+      },
+    }
+  );
+  if (!res.ok) throw new Error(`fetchSignals failed: ${res.status}`);
+  const rows = await res.json();
+  return rows.map(normalizeSignal);
+}
+
+export async function fetchSignalById(id) {
+  const res = await fetch(
+    `${import.meta.env.VITE_SUPABASE_URL}/rest/v1/signals?id=eq.${id}&limit=1`,
+    {
+      headers: {
+        apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
+        Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+        'Accept-Profile': 'chaos',
+      },
+    }
+  );
+  if (!res.ok) throw new Error(`fetchSignalById failed: ${res.status}`);
+  const rows = await res.json();
+  return rows[0] ? normalizeSignal(rows[0]) : null;
+}
 
 export const POSITIONS = [
   {
