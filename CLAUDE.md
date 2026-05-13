@@ -23,28 +23,40 @@ chaos/
   n8n-screener-prompt-v1.md                  ← design doc for the screener workflow
   CLAUDE.md                                  ← this file
   pwa/
-    index.html        ← entry point, CDN React + Babel (no build step)
-    manifest.json     ← PWA manifest, theme #3D5A7A
-    sw.js             ← cache-first service worker
-    vercel.json       ← SPA rewrites + SW headers
-    data.js           ← mock data (replace with Supabase calls per tab)
-    icons.jsx         ← inline SVG icon components
-    components.jsx    ← shared UI: Card, SignalCard, AppBar, etc.
-    views.jsx         ← 8 tab views
-    app.jsx           ← root App, tab routing, bottom nav
+    index.html        ← Vite entry point — only <head> + #root + main.jsx script
+    package.json      ← Vite + React 18 deps, scripts (dev/build/preview)
+    vite.config.js    ← Vite config — base /, output dist/, publicDir public/
+    vercel.json       ← Vite framework, build command, SPA rewrites, SW headers
+    .env.example      ← documents VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY
+    public/
+      manifest.json   ← PWA manifest, theme #3D5A7A — served at /manifest.json
+      sw.js           ← cache-first service worker — served at /sw.js
+    src/
+      main.jsx        ← Vite entry: ReactDOM.createRoot + service worker registration
+      App.jsx         ← root App, tab routing, bottom nav (default export)
+      views.jsx       ← 8 tab views
+      components.jsx  ← shared UI: Card, SignalCard, AppBar, etc.
+      icons.jsx       ← inline SVG icon components
+      data.js         ← mock data (replace with Supabase calls per tab)
 ```
 
 ---
 
 ## PWA architecture
 
-**No build step.** HTML-first with CDN React 18 + Babel standalone. Files load in order via `<script>` tags in `index.html`:
+**Vite + React 18.** ES modules, `import.meta.env.VITE_*` for environment variables, Vercel-native build. All `src/` files use explicit `import` / `export` — no global `window` exposure.
 
 ```
-data.js → icons.jsx → components.jsx → views.jsx → app.jsx
+main.jsx → App.jsx → views.jsx + components.jsx + icons.jsx + data.js
 ```
 
-Each file uses `Object.assign(window, {...})` to expose components globally. This is intentional — avoids ES module complexity for a personal tool.
+**Dev / build commands** (run from `pwa/`):
+- `npm install` — install deps
+- `npm run dev` — local dev server with HMR
+- `npm run build` — production bundle to `dist/`
+- `npm run preview` — serve the production build locally
+
+**Environment variables** live in Vercel project settings (`VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`) and are never committed. `.env.example` documents the required vars without values. Local dev: copy `.env.example` to `.env.local` and fill in.
 
 **Design system:**
 - Fonts: Playfair Display (tickers/headers), Carlito (body/UI), DM Mono (numbers)

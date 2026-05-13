@@ -1,6 +1,6 @@
 // Mock data for the Chaos trading PWA shell.
 
-const SETUP_LABELS = {
+export const SETUP_LABELS = {
   momentum_continuation: 'Momentum Continuation',
   ema_pullback: 'EMA Pullback',
   bb_squeeze_breakout: 'BB Squeeze Breakout',
@@ -9,7 +9,7 @@ const SETUP_LABELS = {
   breakout_retest: 'Breakout Retest',
 };
 
-const SIGNALS = [
+export const SIGNALS = [
   {
     id: 'sig-nvda-1',
     ticker: 'NVDA',
@@ -96,7 +96,7 @@ const SIGNALS = [
   },
 ];
 
-const POSITIONS = [
+export const POSITIONS = [
   {
     id: 'pos-1',
     ticker: 'NVDA',
@@ -125,7 +125,7 @@ const POSITIONS = [
   },
 ];
 
-const SHADOW_TRADES = [
+export const SHADOW_TRADES = [
   {
     id: 'sh-1',
     ticker: 'TSLA',
@@ -150,7 +150,7 @@ const SHADOW_TRADES = [
   },
 ];
 
-const JOURNAL = [
+export const JOURNAL = [
   {
     id: 'j-1',
     ticker: 'MSFT',
@@ -186,7 +186,7 @@ const JOURNAL = [
   },
 ];
 
-const SETUPS = [
+export const SETUPS = [
   {
     key: 'momentum_continuation',
     blurb: 'Trend-day continuations off shallow consolidation.',
@@ -219,13 +219,13 @@ const SETUPS = [
   },
 ];
 
-const BACKTESTS = [
+export const BACKTESTS = [
   { id: 'bt-1', name: 'EMA Pullback / SPY universe / 1y', winRate: 0.58, expectancy: 0.72, trades: 142, sharpe: 1.34 },
   { id: 'bt-2', name: 'BB Squeeze / Liquid US / 6mo', winRate: 0.49, expectancy: 0.91, trades: 88, sharpe: 1.61 },
   { id: 'bt-3', name: 'Momentum / Top 50 by ADV / 2y', winRate: 0.54, expectancy: 0.45, trades: 318, sharpe: 1.05 },
 ];
 
-const SENTIMENT = {
+export const SENTIMENT = {
   headline: 'Risk-on, narrow leadership',
   body: 'Broad indices are extending above the 200 EMA but breadth is thinning into the close. Mega-cap tech is carrying the tape; small-caps and energy lagged again today. Watch for a regime check if 200 EMA breaks on a daily close.',
   bullets: [
@@ -237,11 +237,7 @@ const SENTIMENT = {
   ts: 'Updated 6 min ago',
 };
 
-const REGIME = {
+export const REGIME = {
   state: 'Trending',
   detail: 'SPY +0.4% above 200 EMA · Breadth thinning',
 };
-
-Object.assign(window, {
-  SETUP_LABELS, SIGNALS, POSITIONS, SHADOW_TRADES, JOURNAL, SETUPS, BACKTESTS, SENTIMENT, REGIME,
-});

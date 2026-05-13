@@ -1,4 +1,14 @@
 // Main App: bottom-nav shell + tab routing.
+import React from 'react';
+import {
+  IconActivity, IconList, IconEye, IconBookOpen, IconTrendingUp,
+  IconBarChart3, IconSlidersHorizontal, IconFileSearch, IconArrowLeft, IconBell,
+} from './icons.jsx';
+import { AppBar } from './components.jsx';
+import {
+  DashboardView, SignalQueueView, SignalDetailView, ShadowTradesView,
+  JournalView, SentimentView, BacktestView, CriteriaView,
+} from './views.jsx';
 
 const TABS = [
   { key: 'dashboard',     label: 'Dash',     Icon: IconActivity,          title: 'Chaos',   italic: 'Dashboard' },
@@ -74,5 +84,4 @@ const App = () => {
   );
 };
 
-const root = ReactDOM.createRoot(document.getElementById('root'));
-root.render(<App />);
+export default App;

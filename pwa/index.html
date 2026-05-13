@@ -41,23 +41,9 @@
     }
     *::-webkit-scrollbar { width: 0; height: 0; }
   </style>
-  <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" crossorigin="anonymous"></script>
-  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" crossorigin="anonymous"></script>
-  <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" crossorigin="anonymous"></script>
 </head>
 <body>
   <div id="root" class="device-frame"></div>
-  <script src="data.js"></script>
-  <script type="text/babel" src="icons.jsx"></script>
-  <script type="text/babel" src="components.jsx"></script>
-  <script type="text/babel" src="views.jsx"></script>
-  <script type="text/babel" src="app.jsx"></script>
-  <script>
-    if ('serviceWorker' in navigator) {
-      window.addEventListener('load', () => {
-        navigator.serviceWorker.register('/sw.js');
-      });
-    }
-  </script>
+  <script type="module" src="/src/main.jsx"></script>
 </body>
 </html>

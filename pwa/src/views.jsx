@@ -1,6 +1,17 @@
 // The 8 tab views.
+import React from 'react';
+import {
+  cls, convictionStripe, Stat, StatStrip, RegimeBanner, RRPill, ConvictionTag,
+  Card, SignalCard, PositionCard, SectionHeader,
+} from './components.jsx';
+import {
+  IconArrowLeft, IconRefresh, IconPlay, IconCheck, IconChevronRight, IconSparkle,
+} from './icons.jsx';
+import {
+  SETUP_LABELS, SIGNALS, POSITIONS, SHADOW_TRADES, JOURNAL, SETUPS, BACKTESTS, SENTIMENT, REGIME,
+} from './data.js';
 
-const DashboardView = () => {
+export const DashboardView = () => {
   const livePnl = POSITIONS.filter(p => p.type === 'live').reduce((s, p) => s + p.pnlPct, 0);
   return (
     <div className="flex flex-col gap-3 p-4 pb-24">
@@ -32,7 +43,7 @@ const DashboardView = () => {
   );
 };
 
-const SignalQueueView = ({ openSignal }) => (
+export const SignalQueueView = ({ openSignal }) => (
   <div className="flex flex-col gap-3 p-4 pb-24">
     <SectionHeader
       title={`Open Signals · ${SIGNALS.length}`}
@@ -49,7 +60,7 @@ const SignalQueueView = ({ openSignal }) => (
   </div>
 );
 
-const SignalDetailView = ({ signalId, back }) => {
+export const SignalDetailView = ({ signalId, back }) => {
   const s = SIGNALS.find((x) => x.id === signalId) || SIGNALS[0];
   return (
     <div className="flex flex-col gap-3 p-4 pb-24">
@@ -108,7 +119,7 @@ const SignalDetailView = ({ signalId, back }) => {
   );
 };
 
-const ShadowTradesView = () => (
+export const ShadowTradesView = () => (
   <div className="flex flex-col gap-3 p-4 pb-24">
     <SectionHeader title="Passed Signals · Would-have outcomes" />
     {SHADOW_TRADES.map((t) => (
@@ -141,7 +152,7 @@ const ShadowTradesView = () => (
   </div>
 );
 
-const JournalView = () => (
+export const JournalView = () => (
   <div className="flex flex-col gap-3 p-4 pb-24">
     <StatStrip items={[
       { label: 'Closed', value: `${JOURNAL.length}` },
@@ -187,7 +198,7 @@ const JournalView = () => (
   </div>
 );
 
-const SentimentView = () => (
+export const SentimentView = () => (
   <div className="flex flex-col gap-3 p-4 pb-24">
     <Card>
       <div className="px-3.5 pb-3.5 pt-3.5">
@@ -217,7 +228,7 @@ const SentimentView = () => (
   </div>
 );
 
-const BacktestView = () => {
+export const BacktestView = () => {
   const [setup, setSetup] = React.useState('ema_pullback');
   const [universe, setUniverse] = React.useState('SPY');
   const [period, setPeriod] = React.useState('1y');
@@ -277,7 +288,7 @@ const BacktestView = () => {
   );
 };
 
-const CriteriaView = () => {
+export const CriteriaView = () => {
   const [open, setOpen] = React.useState('momentum_continuation');
   return (
     <div className="flex flex-col gap-2.5 p-4 pb-24">
@@ -313,8 +324,3 @@ const CriteriaView = () => {
     </div>
   );
 };
-
-Object.assign(window, {
-  DashboardView, SignalQueueView, SignalDetailView, ShadowTradesView,
-  JournalView, SentimentView, BacktestView, CriteriaView,
-});
