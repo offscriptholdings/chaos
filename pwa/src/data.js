@@ -57,60 +57,6 @@ export async function fetchSignalById(id) {
   return rows[0] ? normalizeSignal(rows[0]) : null;
 }
 
-export const POSITIONS = [
-  {
-    id: 'pos-1',
-    ticker: 'NVDA',
-    type: 'live',
-    setup: 'momentum_continuation',
-    entry: 478.20,
-    current: 489.65,
-    stop: 471.10,
-    target: 512.80,
-    r: 1.32,
-    daysHeld: 2,
-    pnlPct: 2.39,
-  },
-  {
-    id: 'pos-2',
-    ticker: 'AMD',
-    type: 'paper',
-    setup: 'bb_squeeze_breakout',
-    entry: 168.10,
-    current: 170.05,
-    stop: 164.40,
-    target: 180.10,
-    r: 0.46,
-    daysHeld: 1,
-    pnlPct: 1.16,
-  },
-];
-
-export const SHADOW_TRADES = [
-  {
-    id: 'sh-1',
-    ticker: 'TSLA',
-    setup: 'breakout_retest',
-    passedAt: 'Yesterday',
-    entry: 184.50,
-    target: 192.40,
-    hit: 'target',
-    wouldR: 2.20,
-    note: 'Passed — sentiment was risk-off; would have hit target intraday.',
-  },
-  {
-    id: 'sh-2',
-    ticker: 'META',
-    setup: 'macd_crossover',
-    passedAt: '2d ago',
-    entry: 488.20,
-    target: 502.10,
-    hit: 'target',
-    wouldR: 1.85,
-    note: 'Passed — already had 2 open longs in tech. Setup played out clean.',
-  },
-];
-
 export const JOURNAL = [
   {
     id: 'j-1',
@@ -189,6 +135,24 @@ export function parseThresholds(row) {
   }
 
   return out;
+}
+
+/** Fetch open trade_journal rows joined to signals, date_closed IS NULL */
+export async function fetchOpenPositions() {
+  const url = import.meta.env.VITE_SUPABASE_URL;
+  const key = import.meta.env.VITE_SUPABASE_ANON_KEY;
+  const res = await fetch(
+    `${url}/rest/v1/trade_journal?select=*,signals(ticker,setup_type)&date_closed=is.null&order=date_opened.desc`,
+    {
+      headers: {
+        apikey: key,
+        Authorization: `Bearer ${key}`,
+        'Accept-Profile': 'chaos',
+      },
+    }
+  );
+  if (!res.ok) throw new Error(`fetchOpenPositions failed: ${res.status}`);
+  return res.json();
 }
 
 export const BACKTESTS = [

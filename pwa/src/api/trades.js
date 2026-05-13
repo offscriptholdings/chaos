@@ -88,3 +88,13 @@ export async function closeTrade({ tradeId, actualExit, exitRationale, entryRati
   if (!res.ok) throw new Error(`closeTrade failed: ${res.status}`);
   return res.json();
 }
+
+/** Fetch shadow_trades joined to signals, newest first */
+export async function fetchShadowTrades() {
+  const res = await fetch(
+    `${SUPABASE_URL}/rest/v1/shadow_trades?select=*,signals(ticker,setup_type)&order=created_at.desc&limit=50`,
+    { headers: READ_H }
+  );
+  if (!res.ok) throw new Error(`fetchShadowTrades failed: ${res.status}`);
+  return res.json();
+}
