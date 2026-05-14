@@ -143,6 +143,32 @@ Market Close Trigger
 
 ---
 
+## Companion workflows
+
+### Chaos — Shadow Outcome Backfill
+
+**File:** `Chaos — Shadow Outcome Backfill.json`
+
+**Schedule:** daily 5pm ET, weekdays (cron: `0 0 17 * * 1-5`)
+
+**Purpose:** Backfills `outcome_if_taken` and `would_have_won` on `chaos.shadow_trades` rows by replaying Polygon daily bars from `signal_date` forward against each signal's entry/stop/target (long-bias rules).
+
+**Pipeline:**
+
+```
+Daily 5pm Trigger
+→ Compute Cutoff (14 days back, today)
+→ Query Shadow Trades (chaos.shadow_trades joined to signals, outcome_if_taken IS NULL)
+→ Filter and Guard (drop orphans, stale signals, missing entry/stop/r_ratio)
+→ SplitInBatches (1 at a time)
+→ Polygon Daily Bars (signal_date → today, asc)
+→ Replay Logic (target hit → r_ratio; stop hit → -1.0; ≥10 bars and neither → partial outcome; else null)
+→ Skip Unresolved? (IF on should_patch)
+→ PATCH chaos.shadow_trades (set outcome_if_taken, would_have_won)
+```
+
+---
+
 ## 6 setup types
 
 All seeded into `chaos.trading_criteria` version 1.
