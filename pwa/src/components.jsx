@@ -173,7 +173,7 @@ export const SectionHeader = ({ title, right }) => (
 );
 
 export const AppBar = ({ title, italic, left, right }) => (
-  <div className="flex items-center justify-between border-b border-[rgba(24,24,26,0.08)] bg-[#FAFAF8] px-4 py-3">
+  <div className="flex items-center justify-between border-b border-[rgba(24,24,26,0.08)] bg-[#FAFAF8] px-4 pb-3" style={{ paddingTop: 'max(0.75rem, env(safe-area-inset-top))' }}>
     <div className="flex w-8 justify-start">{left}</div>
     <div className="flex flex-col items-center">
       <div className="font-['Playfair_Display'] text-[18px] font-bold leading-none text-[#18181A]">
