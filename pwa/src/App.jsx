@@ -34,7 +34,7 @@ const App = () => {
   const tab = TABS.find((t) => t.key === active);
 
   return (
-    <div className="mx-auto flex h-full max-w-[480px] flex-col bg-[#FAFAF8]">
+    <div className="mx-auto flex h-[100dvh] max-w-[480px] flex-col bg-[#FAFAF8]">
       <AppBar
         title={tab.title}
         italic={tab.italic}
