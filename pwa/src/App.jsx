@@ -49,7 +49,7 @@ const App = () => {
       />
 
       <div className="flex-1 overflow-y-auto">
-        {active === 'dashboard'     && <DashboardView />}
+        {active === 'dashboard'     && <DashboardView openSignal={openSignal} goToQueue={() => setActive('queue')} />}
         {active === 'queue'         && <SignalQueueView openSignal={openSignal} />}
         {active === 'signal_detail' && <SignalDetailView signalId={signalId} back={() => setActive('queue')} />}
         {active === 'shadow'        && <ShadowTradesView />}

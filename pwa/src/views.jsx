@@ -14,9 +14,10 @@ import {
 } from './data.js';
 import { takeTrade, passTrade, fetchJournal, closeTrade, fetchShadowTrades } from './api/trades.js';
 
-export const DashboardView = () => {
+export const DashboardView = ({ openSignal, goToQueue }) => {
   const [positions, setPositions] = React.useState(null);
   const [regime, setRegime] = React.useState(REGIME);
+  const [signals, setSignals] = React.useState(null);
   const [err, setErr] = React.useState(null);
 
   React.useEffect(() => {
@@ -24,6 +25,9 @@ export const DashboardView = () => {
       .then(setPositions)
       .catch(e => setErr(e.message));
     fetchRegime().then(r => { if (r) setRegime(r); }).catch(() => {});
+    fetchSignals()
+      .then(rows => setSignals(rows.slice(0, 3)))
+      .catch(() => setSignals([]));
   }, []);
 
   if (err) {
@@ -76,6 +80,51 @@ export const DashboardView = () => {
           Activity wiring coming soon.
         </div>
       </Card>
+      <SectionHeader
+        title={`Signal Queue · ${signals ? signals.length : '—'}`}
+        right={
+          <button
+            onClick={goToQueue}
+            className="font-[Carlito] text-[10px] font-bold uppercase tracking-[0.1em] text-[#3D5A7A]"
+          >
+            View all →
+          </button>
+        }
+      />
+      {signals === null ? (
+        <div className="py-3 text-center font-[Carlito] text-[12px] text-[#8A8A94]">Loading…</div>
+      ) : signals.length === 0 ? (
+        <div className="py-3 text-center font-[Carlito] text-[12px] text-[#8A8A94]">No open signals.</div>
+      ) : (
+        <div className="flex flex-col gap-2">
+          {signals.map(s => (
+            <button
+              key={s.id}
+              onClick={() => openSignal && openSignal(s.id)}
+              className="w-full text-left"
+            >
+              <Card>
+                <div className="px-3.5 py-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <ConvictionTag c={s.conviction} />
+                      <span className="font-['DM_Mono'] text-[15px] font-bold text-[#18181A]">{s.ticker}</span>
+                    </div>
+                    <span className="font-[Carlito] text-[10px] font-bold uppercase tracking-[0.08em] text-[#5A7A9E]">
+                      {SETUP_LABELS[s.setup] ?? s.setup}
+                    </span>
+                  </div>
+                  <div className="mt-2 grid grid-cols-3 gap-2 rounded-[8px] border border-[rgba(24,24,26,0.08)] bg-[#F2F0EC] px-3 py-2">
+                    <Stat label="Entry" value={`$${s.entry?.toFixed(2) ?? '—'}`} />
+                    <Stat label="Stop" value={`$${s.stop?.toFixed(2) ?? '—'}`} valueClass="text-[#C0392B]" />
+                    <div className="flex flex-col items-start justify-center"><RRPill rr={s.rr} /></div>
+                  </div>
+                </div>
+              </Card>
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 };
