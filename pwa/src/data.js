@@ -9,7 +9,38 @@ export const SETUP_LABELS = {
   breakout_retest: 'Breakout Retest',
 };
 
+const INDICATOR_LABELS = {
+  rsi_14: 'RSI 14',
+  rel_vol: 'Rel Vol',
+  macd_hist: 'MACD Hist',
+  macd_line: 'MACD',
+  macd_signal: 'MACD Sig',
+  ema_200: 'EMA 200',
+  ema_50: 'EMA 50',
+  ema_20: 'EMA 20',
+  atr_14: 'ATR 14',
+  bb_width: 'BB Width',
+  bb_width_pctile_14d: 'BB %ile',
+  bb_pct_b: 'BB %B',
+  prior_breakout_bars_ago: 'Brk Bars',
+};
+
+function indicatorState(key, value) {
+  if (key.startsWith('rsi')) return value >= 30 && value <= 70 ? 'ok' : 'warn';
+  if (key === 'rel_vol') return value >= 1 ? 'ok' : value < 0.5 ? 'warn' : 'neutral';
+  if (key === 'macd_hist') return value > 0 ? 'ok' : value < -0.1 ? 'warn' : 'neutral';
+  return 'neutral';
+}
+
 function normalizeSignal(row) {
+  const snap = row.indicator_snapshot ?? {};
+  const indicators = Object.entries(snap).map(([k, v]) => ({
+    label: INDICATOR_LABELS[k] ?? k.replace(/_/g, ' ').toUpperCase(),
+    value: typeof v === 'number' ? (Number.isInteger(v) ? String(v) : v.toFixed(2)) : String(v),
+    state: indicatorState(k, v),
+  }));
+  const signalDate = row.signal_date ? new Date(row.signal_date) : null;
+  const age = signalDate ? Math.floor((Date.now() - signalDate.getTime()) / 86400000) + 'd' : null;
   return {
     id: row.id,
     ticker: row.ticker,
@@ -19,9 +50,11 @@ function normalizeSignal(row) {
     entry: row.entry_low ?? row.price_at_signal,
     stop: row.stop,
     target: row.target,
-    r_ratio: row.r_ratio ?? null,
+    rr: row.r_ratio ?? null,
     signal_date: row.signal_date,
-    indicator_snapshot: row.indicator_snapshot ?? null,
+    age,
+    notes: row.notes ?? null,
+    indicators,
   };
 }
 
@@ -177,3 +210,42 @@ export const REGIME = {
   state: 'Trending',
   detail: 'SPY +0.4% above 200 EMA · Breadth thinning',
 };
+
+export async function fetchRegime() {
+  const url = import.meta.env.VITE_SUPABASE_URL;
+  const key = import.meta.env.VITE_SUPABASE_ANON_KEY;
+  const res = await fetch(
+    `${url}/rest/v1/market_regime?order=date.desc&limit=1`,
+    { headers: { apikey: key, Authorization: `Bearer ${key}` } }
+  );
+  if (!res.ok) return null;
+  const rows = await res.json();
+  if (!rows[0]) return null;
+  return {
+    state: rows[0].regime_tag ?? 'Unknown',
+    detail: rows[0].spy_price ? `SPY ${rows[0].spy_price}` : '',
+  };
+}
+
+export async function fetchSentiment() {
+  const url = import.meta.env.VITE_SUPABASE_URL;
+  const key = import.meta.env.VITE_SUPABASE_ANON_KEY;
+  const res = await fetch(
+    `${url}/rest/v1/daily_briefs?select=date,sections,generated_at&order=date.desc&limit=1`,
+    { headers: { apikey: key, Authorization: `Bearer ${key}` } }
+  );
+  if (!res.ok) return null;
+  const rows = await res.json();
+  if (!rows[0]) return null;
+  const trading = rows[0].sections?.trading ?? {};
+  const genAt = rows[0].generated_at ? new Date(rows[0].generated_at) : null;
+  const minAgo = genAt ? Math.round((Date.now() - genAt.getTime()) / 60000) : null;
+  const ts = minAgo !== null
+    ? (minAgo < 60 ? `Updated ${minAgo} min ago` : `Updated ${Math.round(minAgo / 60)}h ago`)
+    : '';
+  return {
+    headline: trading.regime ?? 'No market data',
+    body: trading.note ?? '',
+    ts,
+  };
+}

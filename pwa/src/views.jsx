@@ -10,18 +10,20 @@ import {
 import {
   SETUP_LABELS, JOURNAL, SETUPS, BACKTESTS, SENTIMENT, REGIME,
   fetchSignals, fetchSignalById, fetchCriteria, parseThresholds,
-  fetchOpenPositions,
+  fetchOpenPositions, fetchRegime, fetchSentiment,
 } from './data.js';
 import { takeTrade, passTrade, fetchJournal, closeTrade, fetchShadowTrades } from './api/trades.js';
 
 export const DashboardView = () => {
   const [positions, setPositions] = React.useState(null);
+  const [regime, setRegime] = React.useState(REGIME);
   const [err, setErr] = React.useState(null);
 
   React.useEffect(() => {
     fetchOpenPositions()
       .then(setPositions)
       .catch(e => setErr(e.message));
+    fetchRegime().then(r => { if (r) setRegime(r); }).catch(() => {});
   }, []);
 
   if (err) {
@@ -53,7 +55,7 @@ export const DashboardView = () => {
 
   return (
     <div className="flex flex-col gap-3 p-4 pb-24">
-      <RegimeBanner state={REGIME.state} detail={REGIME.detail} />
+      <RegimeBanner state={regime.state} detail={regime.detail} />
       <StatStrip items={[
         { label: 'Open', value: String(positions.length) },
         { label: 'Today P/L', value: '—' }, // TODO: needs live price feed (future ticket)
@@ -229,6 +231,8 @@ export const SignalQueueView = ({ openSignal }) => {
   const [signals, setSignals] = React.useState(null);
   const [takingSignal, setTakingSignal] = React.useState(null);
   const [passError, setPassError] = React.useState(null);
+  const [showFilter, setShowFilter] = React.useState(false);
+  const [convictionFilter, setConvictionFilter] = React.useState('All');
 
   React.useEffect(() => {
     fetchSignals()
@@ -254,14 +258,43 @@ export const SignalQueueView = ({ openSignal }) => {
     );
   }
 
+  const displayed = convictionFilter === 'All'
+    ? signals
+    : signals.filter(s => s.conviction === convictionFilter);
+
   return (
     <div className="flex flex-col gap-3 p-4 pb-24">
       <SectionHeader
-        title={`Open Signals · ${signals.length}`}
-        right={<button className="font-[Carlito] text-[10px] font-bold uppercase tracking-[0.1em] text-[#3D5A7A]">Filter</button>}
+        title={`Open Signals · ${displayed.length}`}
+        right={
+          <button
+            onClick={() => setShowFilter(f => !f)}
+            className="font-[Carlito] text-[10px] font-bold uppercase tracking-[0.1em] text-[#3D5A7A]"
+          >
+            Filter
+          </button>
+        }
       />
+      {showFilter && (
+        <div className="flex gap-1.5 flex-wrap">
+          {['All', 'High', 'Med', 'Low'].map(v => (
+            <button
+              key={v}
+              onClick={() => setConvictionFilter(v)}
+              className={cls(
+                'rounded-full border px-3 py-1 font-[Carlito] text-[10px] font-bold uppercase tracking-[0.08em]',
+                convictionFilter === v
+                  ? 'border-[#3D5A7A] bg-[#3D5A7A] text-white'
+                  : 'border-[rgba(24,24,26,0.14)] bg-white text-[#3C3C42] active:bg-[#F2F0EC]'
+              )}
+            >{v}</button>
+          ))}
+        </div>
+      )}
       <div className="flex flex-col gap-2.5">
-        {signals.map((s) => (
+        {displayed.length === 0 ? (
+          <div className="font-[Carlito] text-[13px] text-[#8A8A94] p-4 text-center">No signals match filter.</div>
+        ) : displayed.map((s) => (
           <SignalCard key={s.id} signal={s} onOpen={openSignal}
             onTake={(id) => {
               const sig = signals.find(x => x.id === id);
@@ -374,7 +407,7 @@ export const SignalDetailView = ({ signalId, back }) => {
               <div className="flex flex-col items-start justify-center"><RRPill rr={s.rr} /></div>
             </div>
           </div>
-          <p className="mt-3 font-[Carlito] text-[12px] leading-snug text-[#3C3C42]">{s.note}</p>
+          <p className="mt-3 font-[Carlito] text-[12px] leading-snug text-[#3C3C42]">{s.notes}</p>
         </div>
       </Card>
       <SectionHeader title="Diligence" />
@@ -693,35 +726,51 @@ export const JournalView = () => {
   );
 };
 
-export const SentimentView = () => (
-  <div className="flex flex-col gap-3 p-4 pb-24">
-    <Card>
-      <div className="px-3.5 pb-3.5 pt-3.5">
-        <div className="flex items-center gap-1.5">
-          <IconSparkle size={14} stroke="#3D5A7A" />
-          <span className="font-[Carlito] text-[10px] font-bold uppercase tracking-[0.14em] text-[#3D5A7A]">AI Market Intel</span>
-          <span className="ml-auto font-['DM_Mono'] text-[10px] text-[#8A8A94]">{SENTIMENT.ts}</span>
+export const SentimentView = () => {
+  const [intel, setIntel] = React.useState(null);
+  const [loading, setLoading] = React.useState(true);
+
+  const load = () => {
+    setLoading(true);
+    fetchSentiment()
+      .then(data => { setIntel(data); setLoading(false); })
+      .catch(() => setLoading(false));
+  };
+
+  React.useEffect(() => { load(); }, []);
+
+  const headline = intel?.headline ?? '—';
+  const body = intel?.body ?? '';
+  const ts = intel?.ts ?? '';
+
+  return (
+    <div className="flex flex-col gap-3 p-4 pb-24">
+      <Card>
+        <div className="px-3.5 pb-3.5 pt-3.5">
+          <div className="flex items-center gap-1.5">
+            <IconSparkle size={14} stroke="#3D5A7A" />
+            <span className="font-[Carlito] text-[10px] font-bold uppercase tracking-[0.14em] text-[#3D5A7A]">AI Market Intel</span>
+            <span className="ml-auto font-['DM_Mono'] text-[10px] text-[#8A8A94]">{ts}</span>
+          </div>
+          {loading && !intel ? (
+            <p className="mt-2 font-[Carlito] text-[13px] text-[#8A8A94]">Loading…</p>
+          ) : (
+            <>
+              <h2 className="mt-2 font-['Playfair_Display'] text-[22px] font-bold leading-tight text-[#18181A]">{headline}</h2>
+              <p className="mt-2 font-[Carlito] text-[13px] leading-snug text-[#3C3C42]">{body}</p>
+            </>
+          )}
         </div>
-        <h2 className="mt-2 font-['Playfair_Display'] text-[22px] font-bold leading-tight text-[#18181A]">{SENTIMENT.headline}</h2>
-        <p className="mt-2 font-[Carlito] text-[13px] leading-snug text-[#3C3C42]">{SENTIMENT.body}</p>
-      </div>
-    </Card>
-    <SectionHeader title="Today's Read" />
-    <Card>
-      <ul className="divide-y divide-[rgba(24,24,26,0.08)]">
-        {SENTIMENT.bullets.map((b, i) => (
-          <li key={i} className="flex items-start gap-2 px-3.5 py-2.5">
-            <span className="mt-[7px] h-[5px] w-[5px] flex-shrink-0 rounded-full bg-[#3D5A7A]" />
-            <span className="font-[Carlito] text-[12px] leading-snug text-[#3C3C42]">{b}</span>
-          </li>
-        ))}
-      </ul>
-    </Card>
-    <button className="mt-1 flex items-center justify-center gap-1.5 rounded-[10px] border border-[#3D5A7A] bg-white py-3 font-[Carlito] text-[11px] font-bold uppercase tracking-[0.1em] text-[#3D5A7A] active:bg-[#EBF0F5]">
-      <IconRefresh size={13} /> Refresh Intel
-    </button>
-  </div>
-);
+      </Card>
+      <button
+        onClick={load}
+        className="mt-1 flex items-center justify-center gap-1.5 rounded-[10px] border border-[#3D5A7A] bg-white py-3 font-[Carlito] text-[11px] font-bold uppercase tracking-[0.1em] text-[#3D5A7A] active:bg-[#EBF0F5]"
+      >
+        <IconRefresh size={13} /> {loading ? 'Refreshing…' : 'Refresh Intel'}
+      </button>
+    </div>
+  );
+};
 
 export const BacktestView = () => {
   const [setup, setSetup] = React.useState('ema_pullback');
