@@ -141,6 +141,110 @@ export async function fetchCriteria() {
   return res.json();
 }
 
+/** All versions for one setup_type, newest first */
+export async function fetchAllVersionsForSetup(setupType) {
+  const res = await fetch(
+    `${import.meta.env.VITE_SUPABASE_URL}/rest/v1/trading_criteria?setup_type=eq.${encodeURIComponent(setupType)}&order=version.desc`,
+    {
+      headers: {
+        apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
+        Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+        'Accept-Profile': 'chaos',
+      },
+    }
+  );
+  if (!res.ok) throw new Error(`fetchAllVersionsForSetup failed: ${res.status}`);
+  return res.json();
+}
+
+/** Insert a new trading_criteria row with is_active=false. Version = MAX(version)+1 for setup_type. */
+export async function saveDraftCriteria({ setupType, label, thresholds }) {
+  const url = import.meta.env.VITE_SUPABASE_URL;
+  const key = import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+  const maxRes = await fetch(
+    `${url}/rest/v1/trading_criteria?setup_type=eq.${encodeURIComponent(setupType)}&select=version&order=version.desc&limit=1`,
+    {
+      headers: {
+        apikey: key,
+        Authorization: `Bearer ${key}`,
+        'Accept-Profile': 'chaos',
+      },
+    }
+  );
+  if (!maxRes.ok) throw new Error(`saveDraftCriteria max-version lookup failed: ${maxRes.status}`);
+  const maxRows = await maxRes.json();
+  const nextVersion = (maxRows[0]?.version ?? 0) + 1;
+
+  const insertRes = await fetch(`${url}/rest/v1/trading_criteria`, {
+    method: 'POST',
+    headers: {
+      apikey: key,
+      Authorization: `Bearer ${key}`,
+      'Accept-Profile': 'chaos',
+      'Content-Profile': 'chaos',
+      'Content-Type': 'application/json',
+      Prefer: 'return=representation',
+    },
+    body: JSON.stringify({
+      setup_type: setupType,
+      version: nextVersion,
+      label,
+      thresholds,
+      is_active: false,
+    }),
+  });
+  if (!insertRes.ok) throw new Error(`saveDraftCriteria insert failed: ${insertRes.status}`);
+  const rows = await insertRes.json();
+  return rows[0];
+}
+
+/** Deactivate the current active version, then activate the target version (two PATCH calls — not atomic). */
+export async function activateCriteriaVersion({ setupType, versionId }) {
+  const url = import.meta.env.VITE_SUPABASE_URL;
+  const key = import.meta.env.VITE_SUPABASE_ANON_KEY;
+  const writeHeaders = {
+    apikey: key,
+    Authorization: `Bearer ${key}`,
+    'Accept-Profile': 'chaos',
+    'Content-Profile': 'chaos',
+    'Content-Type': 'application/json',
+  };
+
+  const deactivateRes = await fetch(
+    `${url}/rest/v1/trading_criteria?setup_type=eq.${encodeURIComponent(setupType)}&is_active=eq.true`,
+    {
+      method: 'PATCH',
+      headers: writeHeaders,
+      body: JSON.stringify({ is_active: false }),
+    }
+  );
+  if (!deactivateRes.ok) throw new Error(`activateCriteriaVersion deactivate failed: ${deactivateRes.status}`);
+
+  const activateRes = await fetch(
+    `${url}/rest/v1/trading_criteria?id=eq.${encodeURIComponent(versionId)}`,
+    {
+      method: 'PATCH',
+      headers: writeHeaders,
+      body: JSON.stringify({ is_active: true }),
+    }
+  );
+  if (!activateRes.ok) throw new Error(`activateCriteriaVersion activate failed: ${activateRes.status}`);
+}
+
+/** Parses JSON text; returns { ok, value, error }. */
+export function parseThresholdJson(text) {
+  try {
+    const value = JSON.parse(text);
+    if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+      return { ok: false, value: null, error: 'Thresholds must be a JSON object' };
+    }
+    return { ok: true, value, error: null };
+  } catch (e) {
+    return { ok: false, value: null, error: e.message };
+  }
+}
+
 const titleCase = (snake) =>
   snake.split('_').map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
 
