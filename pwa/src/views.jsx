@@ -5,12 +5,13 @@ import {
   Card, SignalCard, PositionCard, SectionHeader,
 } from './components.jsx';
 import {
-  IconArrowLeft, IconRefresh, IconPlay, IconCheck, IconChevronRight, IconSparkle,
+  IconArrowLeft, IconRefresh, IconPlay, IconCheck, IconChevronRight, IconSparkle, IconX,
 } from './icons.jsx';
 import {
   SETUP_LABELS, JOURNAL, SETUPS, BACKTESTS, SENTIMENT, REGIME,
   fetchSignals, fetchSignalById, fetchCriteria, parseThresholds,
   fetchOpenPositions, fetchRegime, fetchSentiment,
+  fetchAllVersionsForSetup, saveDraftCriteria, activateCriteriaVersion, parseThresholdJson,
 } from './data.js';
 import { takeTrade, passTrade, fetchJournal, closeTrade, fetchShadowTrades } from './api/trades.js';
 
@@ -881,69 +882,310 @@ export const BacktestView = () => {
   );
 };
 
-export const CriteriaView = () => {
-  const [criteria, setCriteria] = React.useState(null);
-  const [open, setOpen] = React.useState('momentum_continuation');
+function relativeTime(iso) {
+  if (!iso) return '';
+  const then = new Date(iso).getTime();
+  if (Number.isNaN(then)) return '';
+  const diffSec = Math.round((Date.now() - then) / 1000);
+  if (diffSec < 60) return 'just now';
+  const min = Math.round(diffSec / 60);
+  if (min < 60) return `${min}m ago`;
+  const hr = Math.round(min / 60);
+  if (hr < 24) return `${hr}h ago`;
+  const days = Math.round(hr / 24);
+  if (days < 30) return `${days}d ago`;
+  const months = Math.round(days / 30);
+  if (months < 12) return `${months}mo ago`;
+  return `${Math.round(months / 12)}y ago`;
+}
+
+const CriteriaEditor = ({ mode, source, setupType, onCancel, onSaved, onActivated }) => {
+  const initialLabel = mode === 'fork' ? '' : (source?.label ?? '');
+  const initialJson = React.useMemo(
+    () => JSON.stringify(source?.thresholds ?? {}, null, 2),
+    [source]
+  );
+  const [label, setLabel] = React.useState(initialLabel);
+  const [jsonText, setJsonText] = React.useState(initialJson);
+  const [busy, setBusy] = React.useState(null);
+  const [banner, setBanner] = React.useState(null);
+  const [errorMsg, setErrorMsg] = React.useState(null);
+
+  const parsed = parseThresholdJson(jsonText);
+  const canSave = parsed.ok && label.trim().length > 0 && !busy;
+  const canActivate = mode === 'edit' && source && !source.is_active && !busy;
 
   React.useEffect(() => {
-    fetchCriteria()
-      .then((rows) => setCriteria(rows))
-      .catch((err) => { console.error(err); setCriteria([]); });
-  }, []);
+    if (!banner) return;
+    const t = setTimeout(() => setBanner(null), 3000);
+    return () => clearTimeout(t);
+  }, [banner]);
 
-  if (criteria === null) {
-    return (
-      <div className="flex flex-col gap-2.5 p-4 pb-24">
-        <SectionHeader title="Setup Criteria" />
-        <div className="font-[Carlito] text-[13px] text-[#8A8A94] p-4 text-center">Loading…</div>
-      </div>
-    );
+  async function handleSave() {
+    if (!canSave) return;
+    setBusy('save');
+    setErrorMsg(null);
+    try {
+      const row = await saveDraftCriteria({
+        setupType,
+        label: label.trim(),
+        thresholds: parsed.value,
+      });
+      setBanner(`Saved v${row.version}`);
+      onSaved?.(row);
+    } catch (e) {
+      setErrorMsg(e.message);
+    } finally {
+      setBusy(null);
+    }
   }
 
-  if (criteria.length === 0) {
-    return (
-      <div className="flex flex-col gap-2.5 p-4 pb-24">
-        <SectionHeader title="Setup Criteria" />
-        <div className="font-[Carlito] text-[13px] text-[#8A8A94] p-4 text-center">No active criteria found.</div>
-      </div>
-    );
+  async function handleActivate() {
+    if (!canActivate) return;
+    setBusy('activate');
+    setErrorMsg(null);
+    try {
+      await activateCriteriaVersion({ setupType, versionId: source.id });
+      setBanner(`v${source.version} is now active for ${setupType}. Screener and AI scorer will use these thresholds on next run.`);
+      onActivated?.();
+    } catch (e) {
+      setErrorMsg(`Activation failed — ${e.message}. Retry.`);
+    } finally {
+      setBusy(null);
+    }
   }
+
+  const previewRow = parsed.ok ? { thresholds: parsed.value } : null;
+  const previewBullets = previewRow ? parseThresholds(previewRow) : [];
+
+  const title = mode === 'fork'
+    ? `Fork from v${source?.version}`
+    : `Edit v${source?.version}`;
+
+  return (
+    <div className="fixed inset-0 z-30 flex items-end justify-center bg-black/30">
+      <div className="flex max-h-[92dvh] w-full max-w-[480px] flex-col rounded-t-[16px] border border-[rgba(24,24,26,0.14)] bg-[#FAFAF8]">
+        <div className="flex items-center justify-between border-b border-[rgba(24,24,26,0.08)] px-4 py-3">
+          <div className="flex flex-col">
+            <div className="font-[Carlito] text-[10px] font-bold uppercase tracking-[0.12em] text-[#5A7A9E]">
+              {SETUP_LABELS[setupType] ?? setupType}
+            </div>
+            <div className="font-['Playfair_Display'] text-[16px] font-bold text-[#18181A]">{title}</div>
+          </div>
+          <button onClick={onCancel} className="rounded-full p-1.5 active:bg-[#F2F0EC]">
+            <IconX size={18} stroke="#3C3C42" />
+          </button>
+        </div>
+
+        <div className="flex flex-col gap-3 overflow-y-auto px-4 py-3">
+          {banner && (
+            <div className="rounded-[8px] border border-[#2E7D5A]/30 bg-[#E8F4EE] px-3 py-2 font-[Carlito] text-[12px] leading-snug text-[#1F5A41]">
+              {banner}
+            </div>
+          )}
+          {errorMsg && (
+            <div className="rounded-[8px] border border-[#C0392B]/30 bg-[#FBEAE7] px-3 py-2 font-[Carlito] text-[12px] leading-snug text-[#8B2A1E]">
+              {errorMsg}
+            </div>
+          )}
+
+          <div className="flex flex-col gap-1">
+            <div className="font-[Carlito] text-[10px] font-bold uppercase tracking-[0.1em] text-[#8A8A94]">Label</div>
+            <input
+              type="text"
+              value={label}
+              onChange={(e) => setLabel(e.target.value)}
+              placeholder="e.g. v2 — tightened RSI band"
+              className="w-full rounded-[8px] border border-[rgba(24,24,26,0.14)] bg-white px-3 py-2 font-[Carlito] text-[13px] text-[#18181A]"
+            />
+          </div>
+
+          <div className="flex flex-col gap-1">
+            <div className="flex items-center justify-between">
+              <div className="font-[Carlito] text-[10px] font-bold uppercase tracking-[0.1em] text-[#8A8A94]">Thresholds (JSON)</div>
+              <div className="flex items-center gap-1.5">
+                <span className={cls('inline-block h-[7px] w-[7px] rounded-full', parsed.ok ? 'bg-[#2E7D5A]' : 'bg-[#C0392B]')} />
+                <span className="font-[Carlito] text-[10px] uppercase tracking-[0.08em] text-[#8A8A94]">
+                  {parsed.ok ? 'Valid' : 'Invalid'}
+                </span>
+              </div>
+            </div>
+            <textarea
+              value={jsonText}
+              onChange={(e) => setJsonText(e.target.value)}
+              spellCheck={false}
+              rows={16}
+              wrap="off"
+              style={{ whiteSpace: 'pre', overflowX: 'auto' }}
+              className="w-full rounded-[8px] border border-[rgba(24,24,26,0.14)] bg-white px-3 py-2 font-['DM_Mono'] text-[12px] leading-snug text-[#18181A]"
+            />
+            {!parsed.ok && (
+              <div className="font-[Carlito] text-[11px] leading-snug text-[#C0392B]">{parsed.error}</div>
+            )}
+          </div>
+
+          <div className="flex flex-col gap-1">
+            <div className="font-[Carlito] text-[10px] font-bold uppercase tracking-[0.1em] text-[#8A8A94]">Preview</div>
+            {previewBullets.length === 0 ? (
+              <div className="rounded-[8px] border border-[rgba(24,24,26,0.08)] bg-[#F2F0EC] px-3 py-2.5 font-[Carlito] text-[12px] text-[#8A8A94]">
+                {parsed.ok ? 'No gates or min R/R found in this JSON.' : 'Fix JSON to see preview.'}
+              </div>
+            ) : (
+              <ul className="flex flex-col gap-1.5 rounded-[8px] border border-[rgba(24,24,26,0.08)] bg-[#F2F0EC] px-3 py-2.5">
+                {previewBullets.map((t, i) => (
+                  <li key={i} className="flex items-start gap-2 font-[Carlito] text-[12px] leading-snug text-[#3C3C42]">
+                    <IconCheck size={13} stroke="#2E7D5A" className="mt-[3px] flex-shrink-0" />
+                    <span className="flex-1 min-w-0">{t}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </div>
+
+        <div className="flex flex-col gap-2 border-t border-[rgba(24,24,26,0.08)] px-4 py-3" style={{ paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))' }}>
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              onClick={onCancel}
+              className="rounded-[8px] border border-[rgba(24,24,26,0.14)] bg-white py-2.5 font-[Carlito] text-[12px] font-bold uppercase tracking-[0.1em] text-[#3C3C42] active:bg-[#F2F0EC]"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleSave}
+              disabled={!canSave}
+              className={cls(
+                'rounded-[8px] py-2.5 font-[Carlito] text-[12px] font-bold uppercase tracking-[0.1em] text-white',
+                canSave ? 'bg-[#3D5A7A] active:bg-[#2c4361]' : 'bg-[#3D5A7A]/40'
+              )}
+            >
+              {busy === 'save' ? 'Saving…' : 'Save as new version'}
+            </button>
+          </div>
+          {canActivate && (
+            <button
+              onClick={handleActivate}
+              disabled={busy === 'activate'}
+              className={cls(
+                'rounded-[8px] py-2.5 font-[Carlito] text-[12px] font-bold uppercase tracking-[0.1em] text-white',
+                busy === 'activate' ? 'bg-[#2E7D5A]/60' : 'bg-[#2E7D5A] active:bg-[#236046]'
+              )}
+            >
+              {busy === 'activate' ? 'Activating…' : `Activate v${source.version}`}
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export const CriteriaView = () => {
+  const [setupType, setSetupType] = React.useState('ema_pullback');
+  const [versions, setVersions] = React.useState(null);
+  const [loadErr, setLoadErr] = React.useState(null);
+  const [editor, setEditor] = React.useState(null);
+
+  async function loadVersions(type) {
+    setVersions(null);
+    setLoadErr(null);
+    try {
+      const rows = await fetchAllVersionsForSetup(type);
+      setVersions(rows);
+    } catch (e) {
+      setLoadErr(e.message);
+      setVersions([]);
+    }
+  }
+
+  React.useEffect(() => { loadVersions(setupType); }, [setupType]);
 
   return (
     <div className="flex flex-col gap-2.5 p-4 pb-24">
-      <SectionHeader title="Setup Criteria" />
-      {criteria.map((row) => {
-        const isOpen = open === row.setup_type;
-        const thresholds = parseThresholds(row);
-        const blurb = row.thresholds?.regime_note ?? row.label ?? '';
-        return (
-          <Card key={row.setup_type} onClick={() => setOpen(isOpen ? null : row.setup_type)}>
-            <div className="px-3.5 py-3">
-              <div className="flex items-start justify-between">
-                <div className="flex flex-col">
-                  <div className="font-[Carlito] text-[10px] font-bold uppercase tracking-[0.12em] text-[#5A7A9E]">
-                    {SETUP_LABELS[row.setup_type] ?? row.setup_type}
-                  </div>
-                  <div className="mt-1 font-[Carlito] text-[12px] leading-snug text-[#3C3C42]">{blurb}</div>
+      <Card>
+        <div className="flex flex-col gap-1 px-3.5 pb-3.5 pt-3.5">
+          <div className="font-[Carlito] text-[10px] font-bold uppercase tracking-[0.1em] text-[#8A8A94]">Setup</div>
+          <select
+            value={setupType}
+            onChange={(e) => setSetupType(e.target.value)}
+            className="w-full rounded-[8px] border border-[rgba(24,24,26,0.14)] bg-white px-3 py-2 font-[Carlito] text-[13px] text-[#18181A]"
+          >
+            {Object.entries(SETUP_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+          </select>
+        </div>
+      </Card>
+
+      <SectionHeader title="Versions" />
+
+      {loadErr && (
+        <div className="rounded-[8px] border border-[#C0392B]/30 bg-[#FBEAE7] px-3 py-2 font-[Carlito] text-[12px] leading-snug text-[#8B2A1E]">
+          Failed to load versions: {loadErr}
+        </div>
+      )}
+
+      {versions === null && !loadErr && (
+        <div className="p-4 text-center font-[Carlito] text-[13px] text-[#8A8A94]">Loading…</div>
+      )}
+
+      {versions !== null && versions.length === 0 && !loadErr && (
+        <div className="p-4 text-center font-[Carlito] text-[13px] text-[#8A8A94]">
+          No versions yet for {SETUP_LABELS[setupType] ?? setupType}
+        </div>
+      )}
+
+      {versions !== null && versions.length > 0 && !versions.some((v) => v.is_active) && (
+        <div className="rounded-[8px] border border-[#B8893A]/30 bg-[#F5EDD8] px-3 py-2 font-[Carlito] text-[12px] leading-snug text-[#7A5A1F]">
+          No active version. Activate one below to resume screening for this setup.
+        </div>
+      )}
+
+      {versions !== null && versions.map((row) => (
+        <Card key={row.id} className={row.is_active ? 'border-l-[3px] border-l-[#2E7D5A]' : undefined}>
+          <div className="flex flex-col gap-2 px-3.5 py-3">
+            <div className="flex items-start justify-between gap-2">
+              <div className="flex min-w-0 flex-col">
+                <div className="flex items-center gap-2">
+                  <span className="font-['DM_Mono'] text-[14px] text-[#18181A]">v{row.version}</span>
+                  {row.is_active && (
+                    <span className="inline-flex items-center rounded-full bg-[#E8F4EE] px-2 py-[2px] font-[Carlito] text-[10px] font-bold uppercase tracking-[0.1em] text-[#2E7D5A]">
+                      Active
+                    </span>
+                  )}
                 </div>
-                <div className={cls('mt-0.5 transition-transform', isOpen && 'rotate-90')}>
-                  <IconChevronRight size={16} stroke="#8A8A94" />
+                <div className="mt-1 truncate font-[Carlito] text-[12px] text-[#3C3C42]">{row.label || '—'}</div>
+                <div className="mt-0.5 font-[Carlito] text-[10px] uppercase tracking-[0.08em] text-[#8A8A94]">
+                  {relativeTime(row.created_at)}
                 </div>
               </div>
-              {isOpen && (
-                <ul className="mt-3 flex flex-col gap-1.5 rounded-[8px] border border-[rgba(24,24,26,0.08)] bg-[#F2F0EC] px-3 py-2.5">
-                  {thresholds.map((t, i) => (
-                    <li key={i} className="flex items-start gap-2 font-[Carlito] text-[12px] leading-snug text-[#3C3C42]">
-                      <IconCheck size={13} stroke="#2E7D5A" className="mt-[3px] flex-shrink-0" />
-                      <span className="flex-1 min-w-0">{t}</span>
-                    </li>
-                  ))}
-                </ul>
-              )}
+              <div className="flex flex-col gap-1.5">
+                <button
+                  onClick={() => setEditor({ mode: 'edit', source: row })}
+                  className="rounded-[8px] border border-[#3D5A7A] bg-white px-3 py-1.5 font-[Carlito] text-[11px] font-bold uppercase tracking-[0.08em] text-[#3D5A7A] active:bg-[#EBF0F5]"
+                >
+                  Edit
+                </button>
+                <button
+                  onClick={() => setEditor({ mode: 'fork', source: row })}
+                  className="rounded-[8px] border border-[rgba(24,24,26,0.14)] bg-white px-3 py-1.5 font-[Carlito] text-[11px] font-bold uppercase tracking-[0.08em] text-[#3C3C42] active:bg-[#F2F0EC]"
+                >
+                  Fork
+                </button>
+              </div>
             </div>
-          </Card>
-        );
-      })}
+          </div>
+        </Card>
+      ))}
+
+      {editor && (
+        <CriteriaEditor
+          mode={editor.mode}
+          source={editor.source}
+          setupType={setupType}
+          onCancel={() => setEditor(null)}
+          onSaved={() => { setEditor(null); loadVersions(setupType); }}
+          onActivated={() => { setEditor(null); loadVersions(setupType); }}
+        />
+      )}
     </div>
   );
 };
