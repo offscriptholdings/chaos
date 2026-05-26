@@ -55,6 +55,11 @@ function normalizeSignal(row) {
     age,
     notes: row.notes ?? null,
     indicators,
+    memo: row.memo ?? null,
+    memo_generated_at: row.memo_generated_at ?? null,
+    memo_addendum: row.memo_addendum ?? null,
+    addendum_generated_at: row.addendum_generated_at ?? null,
+    will_take: row.will_take ?? false,
   };
 }
 
@@ -230,6 +235,24 @@ export async function activateCriteriaVersion({ setupType, versionId }) {
     }
   );
   if (!activateRes.ok) throw new Error(`activateCriteriaVersion activate failed: ${activateRes.status}`);
+}
+
+export async function patchWillTake(id, value) {
+  const res = await fetch(
+    `${import.meta.env.VITE_SUPABASE_URL}/rest/v1/signals?id=eq.${id}`,
+    {
+      method: 'PATCH',
+      headers: {
+        apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
+        Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+        'Accept-Profile': 'chaos',
+        'Content-Profile': 'chaos',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ will_take: value }),
+    }
+  );
+  if (!res.ok) throw new Error(`patchWillTake failed: ${res.status}`);
 }
 
 /** Parses JSON text; returns { ok, value, error }. */
