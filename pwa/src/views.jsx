@@ -682,7 +682,7 @@ export const JournalView = () => {
                     <div className="flex flex-col">
                       <div className="flex items-baseline gap-2">
                         <span className="font-['Playfair_Display'] text-[20px] font-bold leading-none text-[#18181A]">
-                          {t.ticker ?? t.signal_id?.slice(0, 6) ?? '—'}
+                          {t.signals?.ticker ?? t.signal_id?.slice(0, 6) ?? '—'}
                         </span>
                         <span className="inline-flex items-center rounded-full bg-[#EBF0F5] px-2 py-[2px] font-[Carlito] text-[10px] font-bold uppercase tracking-[0.1em] text-[#3D5A7A]">
                           {t.trade_mode}
@@ -721,14 +721,14 @@ export const JournalView = () => {
                   <div className="flex flex-col">
                     <div className="flex items-baseline gap-2">
                       <span className="font-['Playfair_Display'] text-[20px] font-bold leading-none text-[#18181A]">
-                        {t.ticker ?? t.signal_id?.slice(0, 6) ?? '—'}
+                        {t.signals?.ticker ?? t.signal_id?.slice(0, 6) ?? '—'}
                       </span>
                       <span className={cls('inline-flex items-center rounded-full px-2 py-[2px] font-[Carlito] text-[10px] font-bold uppercase tracking-[0.1em]', win ? 'bg-[#E8F4EE] text-[#2E7D5A]' : 'bg-[#FDECEA] text-[#C0392B]')}>
                         {win ? 'Win' : 'Loss'}
                       </span>
                     </div>
                     <div className="mt-[5px] font-[Carlito] text-[10px] font-bold uppercase tracking-[0.12em] text-[#5A7A9E]">
-                      {SETUP_LABELS[t.setup_type] ?? t.setup_type ?? '—'}
+                      {SETUP_LABELS[t.signals?.setup_type] ?? t.signals?.setup_type ?? '—'}
                     </div>
                   </div>
                   <div className="flex flex-col items-end">

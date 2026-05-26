@@ -64,7 +64,7 @@ export async function passTrade({ signalId, reasonPassed }) {
 /** Fetch all trade_journal rows, newest first */
 export async function fetchJournal() {
   const res = await fetch(
-    `${SUPABASE_URL}/rest/v1/trade_journal?order=date_opened.desc&limit=100`,
+    `${SUPABASE_URL}/rest/v1/trade_journal?select=*,signals(ticker,setup_type)&order=date_opened.desc&limit=100`,
     { headers: READ_H }
   );
   if (!res.ok) throw new Error(`fetchJournal failed: ${res.status}`);
