@@ -2,12 +2,12 @@
 import React from 'react';
 import {
   IconActivity, IconList, IconEye, IconBookOpen, IconTrendingUp,
-  IconBarChart3, IconSlidersHorizontal, IconFileSearch, IconArrowLeft, IconBell,
+  IconBarChart3, IconSlidersHorizontal, IconFileSearch, IconArrowLeft, IconBell, IconTarget,
 } from './icons.jsx';
 import { AppBar } from './components.jsx';
 import {
   DashboardView, SignalQueueView, SignalDetailView, ShadowTradesView,
-  JournalView, SentimentView, BacktestView, CriteriaView,
+  JournalView, SentimentView, BacktestView, CriteriaView, PerformanceView,
 } from './views.jsx';
 
 const TABS = [
@@ -18,6 +18,7 @@ const TABS = [
   { key: 'sentiment',     label: 'Intel',    Icon: IconTrendingUp,        title: 'Market',  italic: 'Intel' },
   { key: 'backtest',      label: 'Backtest', Icon: IconBarChart3,         title: 'Backtest' },
   { key: 'criteria',      label: 'Criteria', Icon: IconSlidersHorizontal, title: 'Setup',   italic: 'Criteria' },
+  { key: 'performance',  label: 'Perf',     Icon: IconTarget,            title: 'Performance' },
   { key: 'signal_detail', label: 'Detail',   Icon: IconFileSearch,        title: 'Signal',  italic: 'Detail', hidden: true },
 ];
 
@@ -57,10 +58,11 @@ const App = () => {
         {active === 'sentiment'     && <SentimentView />}
         {active === 'backtest'      && <BacktestView />}
         {active === 'criteria'      && <CriteriaView />}
+        {active === 'performance'  && <PerformanceView />}
       </div>
 
       <nav className="border-t border-[rgba(24,24,26,0.08)] bg-white">
-        <div className="grid grid-cols-8">
+        <div className="grid" style={{ gridTemplateColumns: `repeat(${navTabs.length}, minmax(0, 1fr))` }}>
           {navTabs.map(({ key, label, Icon }) => {
             const isActive = active === key;
             const color = isActive ? '#3D5A7A' : '#8A8A94';

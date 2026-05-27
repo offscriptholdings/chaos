@@ -17,8 +17,10 @@
 BEGIN;
 
 ------------------------------------------------------------------------------
--- 1. CLEANUP (FK-safe order: shadow_trades → trade_journal → signals)
+-- 1. CLEANUP (FK-safe order: paper_trades → shadow_trades → trade_journal → signals)
 ------------------------------------------------------------------------------
+
+DELETE FROM chaos.paper_trades WHERE correlation_note = 'TEST_SEED_2026-05-27';
 
 DELETE FROM chaos.shadow_trades
 WHERE signal_id IN (
@@ -117,24 +119,47 @@ INSERT INTO chaos.shadow_trades (signal_id, reason_passed)
 SELECT id, 'Sentiment was risk-off intraday; passed despite clean setup.'
 FROM chaos.signals WHERE ticker = 'TSLA' AND signal_date = '2026-05-08' AND notes = 'TEST_SEED_2026-05-12';
 
+------------------------------------------------------------------------------
+-- 7. INSERT closed paper_trades for PerformanceView (MTC-198)
+-- Tagged correlation_note = 'TEST_SEED_2026-05-27'. Wipe before trusting live calibration.
+-- High: 3W 1L → 75% win rate, expectancy +1.14R
+-- Med:  1W 2L → 33% win rate, expectancy −0.17R
+-- Low:  1W 1L → 50% win rate, expectancy +0.10R
+------------------------------------------------------------------------------
+
+INSERT INTO chaos.paper_trades
+  (ticker, setup_type, conviction_score, status, outcome, r_multiple, entry_zone, stop, target, correlation_note)
+VALUES
+  ('NVDA', 'momentum_continuation', 3, 'closed', 'target_hit',  2.10, 481.50, 471.10, 512.80, 'TEST_SEED_2026-05-27'),
+  ('AMD',  'bb_squeeze_breakout',   3, 'closed', 'target_hit',  1.85, 168.20, 164.40, 180.10, 'TEST_SEED_2026-05-27'),
+  ('MSFT', 'ema_pullback',          3, 'closed', 'target_hit',  1.60, 411.40, 406.20, 425.60, 'TEST_SEED_2026-05-27'),
+  ('AAPL', 'momentum_continuation', 3, 'closed', 'stop_hit',   -1.00, 188.00, 185.90, 193.20, 'TEST_SEED_2026-05-27'),
+  ('GOOGL','macd_crossover',        2, 'closed', 'target_hit',  1.50, 167.80, 164.20, 178.60, 'TEST_SEED_2026-05-27'),
+  ('META', 'ema_pullback',          2, 'closed', 'stop_hit',   -1.00, 487.40, 480.60, 502.10, 'TEST_SEED_2026-05-27'),
+  ('TSLA', 'breakout_retest',       2, 'closed', 'stop_hit',   -1.00, 183.80, 180.10, 192.40, 'TEST_SEED_2026-05-27'),
+  ('AVGO', 'bb_squeeze_breakout',   1, 'closed', 'target_hit',  1.20, 1339.50,1318.40,1395.80,'TEST_SEED_2026-05-27'),
+  ('CRM',  'bb_mean_reversion',     1, 'closed', 'stop_hit',   -1.00, 270.80, 267.10, 280.50, 'TEST_SEED_2026-05-27');
+
 COMMIT;
 
 ------------------------------------------------------------------------------
--- 7. VERIFICATION
+-- 8. VERIFICATION
 ------------------------------------------------------------------------------
 -- Expected: signals_open=6, signals_triggered=2, signals_expired=2,
 --           trade_journal=2, shadow_trades=2, r_ratios=10, outcomes=1
 
-SELECT 'signals_open'      AS bucket, count(*) FROM chaos.signals       WHERE status = 'open'      AND notes = 'TEST_SEED_2026-05-12'
+SELECT 'signals_open'        AS bucket, count(*) FROM chaos.signals       WHERE status = 'open'      AND notes = 'TEST_SEED_2026-05-12'
 UNION ALL
-SELECT 'signals_triggered',         count(*) FROM chaos.signals       WHERE status = 'triggered' AND notes = 'TEST_SEED_2026-05-12'
+SELECT 'signals_triggered',           count(*) FROM chaos.signals       WHERE status = 'triggered' AND notes = 'TEST_SEED_2026-05-12'
 UNION ALL
-SELECT 'signals_expired',           count(*) FROM chaos.signals       WHERE status = 'expired'   AND notes = 'TEST_SEED_2026-05-12'
+SELECT 'signals_expired',             count(*) FROM chaos.signals       WHERE status = 'expired'   AND notes = 'TEST_SEED_2026-05-12'
 UNION ALL
-SELECT 'trade_journal',             count(*) FROM chaos.trade_journal WHERE signal_id IN (SELECT id FROM chaos.signals WHERE notes = 'TEST_SEED_2026-05-12')
+SELECT 'trade_journal',               count(*) FROM chaos.trade_journal WHERE signal_id IN (SELECT id FROM chaos.signals WHERE notes = 'TEST_SEED_2026-05-12')
 UNION ALL
-SELECT 'shadow_trades',             count(*) FROM chaos.shadow_trades WHERE signal_id IN (SELECT id FROM chaos.signals WHERE notes = 'TEST_SEED_2026-05-12')
+SELECT 'shadow_trades',               count(*) FROM chaos.shadow_trades WHERE signal_id IN (SELECT id FROM chaos.signals WHERE notes = 'TEST_SEED_2026-05-12')
 UNION ALL
-SELECT 'r_ratios_computed',         count(*) FROM chaos.signals       WHERE r_ratio IS NOT NULL AND notes = 'TEST_SEED_2026-05-12'
+SELECT 'r_ratios_computed',           count(*) FROM chaos.signals       WHERE r_ratio IS NOT NULL AND notes = 'TEST_SEED_2026-05-12'
 UNION ALL
-SELECT 'outcomes_computed',         count(*) FROM chaos.trade_journal WHERE outcome IS NOT NULL  AND signal_id IN (SELECT id FROM chaos.signals WHERE notes = 'TEST_SEED_2026-05-12');
+SELECT 'outcomes_computed',           count(*) FROM chaos.trade_journal WHERE outcome IS NOT NULL  AND signal_id IN (SELECT id FROM chaos.signals WHERE notes = 'TEST_SEED_2026-05-12')
+UNION ALL
+SELECT 'paper_trades_closed_seed',    count(*) FROM chaos.paper_trades  WHERE correlation_note = 'TEST_SEED_2026-05-27';

@@ -33,3 +33,4 @@ export const IconPlay = (p) => (<IconBase {...p}><polygon points="6 3 20 12 6 21
 export const IconCheck = (p) => (<IconBase {...p}><polyline points="20 6 9 17 4 12" /></IconBase>);
 export const IconX = (p) => (<IconBase {...p}><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></IconBase>);
 export const IconSparkle = (p) => (<IconBase {...p}><path d="M12 3 13.7 9.3 20 11l-6.3 1.7L12 19l-1.7-6.3L4 11l6.3-1.7Z" /></IconBase>);
+export const IconTarget = (p) => (<IconBase {...p}><circle cx="12" cy="12" r="10" /><circle cx="12" cy="12" r="6" /><circle cx="12" cy="12" r="2" /></IconBase>);
