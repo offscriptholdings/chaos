@@ -10,14 +10,15 @@ import {
 import {
   SETUP_LABELS, JOURNAL, SETUPS, BACKTESTS, SENTIMENT, REGIME,
   fetchSignals, fetchSignalById, fetchCriteria, parseThresholds,
-  fetchOpenPositions, fetchRegime, fetchSentiment,
+  fetchOpenPositions, fetchPaperOpenPositions, fetchRegime, fetchSentiment,
   fetchAllVersionsForSetup, saveDraftCriteria, activateCriteriaVersion, parseThresholdJson,
   fetchClosedPaperTrades,
 } from './data.js';
-import { takeTrade, passTrade, fetchJournal, closeTrade, fetchShadowTrades } from './api/trades.js';
+import { takeTrade, fetchJournal, closeTrade } from './api/trades.js';
 
 export const DashboardView = ({ openSignal, goToQueue }) => {
   const [positions, setPositions] = React.useState(null);
+  const [paperPositions, setPaperPositions] = React.useState([]);
   const [regime, setRegime] = React.useState(REGIME);
   const [signals, setSignals] = React.useState(null);
   const [err, setErr] = React.useState(null);
@@ -26,6 +27,9 @@ export const DashboardView = ({ openSignal, goToQueue }) => {
     fetchOpenPositions()
       .then(setPositions)
       .catch(e => setErr(e.message));
+    fetchPaperOpenPositions()
+      .then(setPaperPositions)
+      .catch(() => setPaperPositions([]));
     fetchRegime().then(r => { if (r) setRegime(r); }).catch(() => {});
     fetchSignals()
       .then(rows => setSignals(rows.slice(0, 3)))
@@ -53,27 +57,42 @@ export const DashboardView = ({ openSignal, goToQueue }) => {
     setup: p.signals?.setup_type ?? '',
     entry: p.actual_entry,
     stop: p.stop,
-    current: null, // TODO: needs live price feed (future ticket)
-    r: null,       // TODO: needs live price feed (future ticket)
+    current: null,
+    r: null,
     daysHeld: Math.floor((Date.now() - new Date(p.date_opened).getTime()) / 86400000),
-    pnlPct: null,  // TODO: needs live price feed (future ticket)
+    pnlPct: null,
   }));
+
+  const adaptedPaper = paperPositions.map(pt => ({
+    id: `paper-${pt.id}`,
+    ticker: pt.signals?.ticker ?? pt.ticker ?? '???',
+    type: 'paper',
+    setup: pt.signals?.setup_type ?? pt.setup_type ?? '',
+    entry: pt.entry_zone,
+    stop: pt.stop,
+    current: null,
+    r: null,
+    daysHeld: Math.floor((Date.now() - new Date(pt.created_at).getTime()) / 86400000),
+    pnlPct: null,
+  }));
+
+  const allPositions = [...adapted, ...adaptedPaper];
 
   return (
     <div className="flex flex-col gap-3 p-4 pb-24">
       <RegimeBanner state={regime.state} detail={regime.detail} />
       <StatStrip items={[
-        { label: 'Open', value: String(positions.length) },
-        { label: 'Today P/L', value: '—' }, // TODO: needs live price feed (future ticket)
-        { label: 'Week R', value: '—' },    // TODO: needs period math over closed trades (future ticket)
-        { label: 'Win %', value: '—' },     // TODO: needs closed-trade aggregates (future ticket)
+        { label: 'Open', value: String(allPositions.length) },
+        { label: 'Today P/L', value: '—' },
+        { label: 'Week R', value: '—' },
+        { label: 'Win %', value: '—' },
       ]} />
       <SectionHeader title="Open Positions" />
       <div className="flex flex-col gap-2.5">
-        {adapted.length === 0 ? (
+        {allPositions.length === 0 ? (
           <div className="py-6 text-center font-[Carlito] text-[12px] text-[#8A8A94]">No open positions</div>
         ) : (
-          adapted.map(p => <PositionCard key={p.id} p={p} />)
+          allPositions.map(p => <PositionCard key={p.id} p={p} />)
         )}
       </div>
       <SectionHeader title="Today" right={<span className="font-['DM_Mono'] text-[10px] text-[#8A8A94]">— activity</span>} />
@@ -281,7 +300,7 @@ function CloseTradeSheet({ trade, onClose, onClosed }) {
 export const SignalQueueView = ({ openSignal }) => {
   const [signals, setSignals] = React.useState(null);
   const [takingSignal, setTakingSignal] = React.useState(null);
-  const [passError, setPassError] = React.useState(null);
+  const [takeError, setTakeError] = React.useState(null);
   const [showFilter, setShowFilter] = React.useState(false);
   const [convictionFilter, setConvictionFilter] = React.useState('All');
 
@@ -351,16 +370,6 @@ export const SignalQueueView = ({ openSignal }) => {
               const sig = signals.find(x => x.id === id);
               if (sig) setTakingSignal(sig);
             }}
-            onPass={async (id) => {
-              const sig = signals.find(x => x.id === id);
-              if (!sig) return;
-              try {
-                await passTrade({ signalId: sig.id, reasonPassed: '' });
-                setSignals(prev => prev.filter(x => x.id !== id));
-              } catch (err) {
-                setPassError(err.message);
-              }
-            }}
           />
         ))}
       </div>
@@ -378,15 +387,15 @@ export const SignalQueueView = ({ openSignal }) => {
               setSignals(prev => prev.filter(x => x.id !== takingSignal.id));
               setTakingSignal(null);
             } catch (err) {
-              setPassError(err.message);
+              setTakeError(err.message);
               setTakingSignal(null);
             }
           }}
           onCancel={() => setTakingSignal(null)}
         />
       )}
-      {passError && (
-        <div className="px-4 font-[Carlito] text-[12px] text-[#C0392B]">{passError}</div>
+      {takeError && (
+        <div className="px-4 font-[Carlito] text-[12px] text-[#C0392B]">{takeError}</div>
       )}
     </div>
   );
@@ -397,7 +406,7 @@ export const SignalDetailView = ({ signalId, back }) => {
   const [notFound, setNotFound] = React.useState(false);
   const [takingMode, setTakingMode] = React.useState(false);
   const [actionError, setActionError] = React.useState(null);
-  const [actioned, setActioned] = React.useState(false);
+  const [taken, setTaken] = React.useState(false);
 
   React.useEffect(() => {
     if (!signalId) return;
@@ -478,30 +487,17 @@ export const SignalDetailView = ({ signalId, back }) => {
           })}
         </div>
       </Card>
-      {actioned ? (
+      {taken ? (
         <div className="rounded-[10px] bg-[#F2F0EC] py-3 text-center font-[Carlito] text-[12px] font-bold uppercase tracking-[0.1em] text-[#8A8A94]">
-          Action recorded
+          Trade recorded
         </div>
       ) : (
-        <div className="grid grid-cols-2 gap-2 pt-1">
+        <div className="pt-1">
           <button
             onClick={() => setTakingMode(true)}
-            className="rounded-[10px] bg-[#3D5A7A] py-3 font-[Carlito] text-[12px] font-bold uppercase tracking-[0.1em] text-white active:bg-[#2c4361]"
+            className="w-full rounded-[10px] bg-[#3D5A7A] py-3 font-[Carlito] text-[12px] font-bold uppercase tracking-[0.1em] text-white active:bg-[#2c4361]"
           >
             Take It
-          </button>
-          <button
-            onClick={async () => {
-              try {
-                await passTrade({ signalId: s.id, reasonPassed: '' });
-                setActioned(true);
-              } catch (err) {
-                setActionError(err.message);
-              }
-            }}
-            className="rounded-[10px] border border-[#3D5A7A] bg-white py-3 font-[Carlito] text-[12px] font-bold uppercase tracking-[0.1em] text-[#3D5A7A] active:bg-[#EBF0F5]"
-          >
-            Pass It
           </button>
         </div>
       )}
@@ -514,7 +510,7 @@ export const SignalDetailView = ({ signalId, back }) => {
           onConfirm={async (mode) => {
             try {
               await takeTrade({ signalId: s.id, tradeMode: mode, entry: s.entry, stop: s.stop });
-              setActioned(true);
+              setTaken(true);
               setTakingMode(false);
             } catch (err) {
               setActionError(err.message);
@@ -523,103 +519,6 @@ export const SignalDetailView = ({ signalId, back }) => {
           }}
           onCancel={() => setTakingMode(false)}
         />
-      )}
-    </div>
-  );
-};
-
-export const ShadowTradesView = () => {
-  const [trades, setTrades] = React.useState(null);
-  const [err, setErr] = React.useState(null);
-
-  React.useEffect(() => {
-    fetchShadowTrades()
-      .then(setTrades)
-      .catch(e => setErr(e.message));
-  }, []);
-
-  if (err) {
-    return (
-      <div className="p-4 font-[Carlito] text-[12px] text-[#C0392B]">Failed to load: {err}</div>
-    );
-  }
-
-  if (trades === null) {
-    return (
-      <div className="p-4 pb-24 font-[Carlito] text-[13px] text-[#8A8A94] text-center">Loading…</div>
-    );
-  }
-
-  const resolved = trades.filter(t => t.outcome_if_taken != null);
-  const won = resolved.filter(t => t.would_have_won);
-  const winPct = resolved.length > 0 ? Math.round((won.length / resolved.length) * 100) : null;
-  const avgR = won.length > 0
-    ? (won.reduce((s, t) => s + t.outcome_if_taken, 0) / won.length).toFixed(2)
-    : null;
-  const pending = trades.filter(t => t.outcome_if_taken == null).length;
-
-  return (
-    <div className="flex flex-col gap-3 p-4 pb-24">
-      <StatStrip items={[
-        { label: 'Passed', value: String(trades.length) },
-        { label: 'Would Win', value: winPct != null ? `${winPct}%` : '—' },
-        { label: 'Avg R', value: avgR != null ? `+${avgR}` : '—', valueClass: avgR != null ? 'text-[#2E7D5A]' : undefined },
-        { label: 'Pending', value: String(pending) },
-      ]} />
-      {trades.length === 0 ? (
-        <div className="py-6 text-center font-[Carlito] text-[12px] text-[#8A8A94]">No passed signals yet</div>
-      ) : (
-        trades.map(t => {
-          const ticker = t.signals?.ticker ?? '???';
-          const setup = t.signals?.setup_type ?? '';
-          const passedAt = new Date(t.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-          const isResolved = t.outcome_if_taken != null;
-
-          return (
-            <Card key={t.id}>
-              <div className="px-3.5 pb-3 pt-3.5">
-                <div className="flex items-start justify-between">
-                  <div className="flex flex-col">
-                    <div className="flex items-baseline gap-2">
-                      <span className="font-['Playfair_Display'] text-[20px] font-bold leading-none text-[#18181A]">{ticker}</span>
-                      <span className="inline-flex items-center rounded-full bg-[#F2F0EC] px-2 py-[2px] font-[Carlito] text-[10px] font-bold uppercase tracking-[0.1em] text-[#8A8A94]">Passed</span>
-                    </div>
-                    <div className="mt-[5px] font-[Carlito] text-[10px] font-bold uppercase tracking-[0.12em] text-[#5A7A9E]">{SETUP_LABELS[setup] ?? setup}</div>
-                  </div>
-                  <div className="flex flex-col items-end">
-                    {isResolved ? (
-                      <span className={cls("font-['DM_Mono'] text-[14px]", t.would_have_won ? 'text-[#2E7D5A]' : 'text-[#C0392B]')}>
-                        {t.would_have_won ? '+' : ''}{t.outcome_if_taken.toFixed(2)}R
-                      </span>
-                    ) : (
-                      <span className="font-[Carlito] text-[11px] italic text-[#8A8A94]">Resolving…</span>
-                    )}
-                    <span className="font-[Carlito] text-[10px] uppercase tracking-[0.08em] text-[#8A8A94]">{passedAt}</span>
-                  </div>
-                </div>
-                {isResolved && (
-                  <div className="mt-3 rounded-[8px] border border-[rgba(24,24,26,0.08)] bg-[#F2F0EC] px-3 py-2.5">
-                    <div className="grid grid-cols-2 gap-2">
-                      <Stat
-                        label="Would-have-R"
-                        value={`${t.would_have_won ? '+' : ''}${t.outcome_if_taken.toFixed(2)}`}
-                        valueClass={t.would_have_won ? 'text-[#2E7D5A]' : 'text-[#C0392B]'}
-                      />
-                      <Stat
-                        label="Outcome"
-                        value={t.would_have_won ? 'Target' : 'Stop'}
-                        valueClass={t.would_have_won ? 'text-[#2E7D5A]' : 'text-[#C0392B]'}
-                      />
-                    </div>
-                  </div>
-                )}
-                {t.reason_passed && (
-                  <p className="mt-2.5 font-[Carlito] text-[11px] italic leading-snug text-[#8A8A94]">{t.reason_passed}</p>
-                )}
-              </div>
-            </Card>
-          );
-        })
       )}
     </div>
   );

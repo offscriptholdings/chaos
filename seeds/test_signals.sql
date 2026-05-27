@@ -22,6 +22,10 @@ BEGIN;
 
 DELETE FROM chaos.paper_trades WHERE correlation_note = 'TEST_SEED_2026-05-27';
 
+DELETE FROM chaos.paper_trades WHERE signal_id IN (
+  SELECT id FROM chaos.signals WHERE notes = 'TEST_SEED_2026-05-12'
+);
+
 DELETE FROM chaos.shadow_trades
 WHERE signal_id IN (
   SELECT id FROM chaos.signals WHERE notes = 'TEST_SEED_2026-05-12'
@@ -140,13 +144,50 @@ VALUES
   ('AVGO', 'bb_squeeze_breakout',   1, 'closed', 'target_hit',  1.20, 1339.50,1318.40,1395.80,'TEST_SEED_2026-05-27'),
   ('CRM',  'bb_mean_reversion',     1, 'closed', 'stop_hit',   -1.00, 270.80, 267.10, 280.50, 'TEST_SEED_2026-05-27');
 
+------------------------------------------------------------------------------
+-- 8. INSERT paper_trades linked to signals (MTC-200 queue lifecycle seeds)
+--
+-- pending_entry: NVDA, AMD, MSFT, AVGO, CRM → appear in Signals queue
+-- open:          AAPL → appears on Dashboard open positions, NOT in queue
+-- entry_missed:  TSLA (expired signal) → appears in neither queue nor Dashboard
+------------------------------------------------------------------------------
+
+INSERT INTO chaos.paper_trades (signal_id, ticker, setup_type, conviction_score, entry_zone, stop, target, status, correlation_note)
+SELECT s.id, s.ticker, s.setup_type,
+  CASE s.conviction WHEN 'High' THEN 3 WHEN 'Med' THEN 2 WHEN 'Low' THEN 1 END,
+  (s.entry_low + s.entry_high) / 2.0,
+  s.stop, s.target,
+  'pending_entry', 'TEST_SEED_2026-05-27'
+FROM chaos.signals s
+WHERE s.ticker IN ('NVDA', 'AMD', 'MSFT', 'AVGO', 'CRM')
+  AND s.notes = 'TEST_SEED_2026-05-12';
+
+INSERT INTO chaos.paper_trades (signal_id, ticker, setup_type, conviction_score, entry_zone, stop, target, status, correlation_note)
+SELECT s.id, s.ticker, s.setup_type,
+  CASE s.conviction WHEN 'High' THEN 3 WHEN 'Med' THEN 2 WHEN 'Low' THEN 1 END,
+  (s.entry_low + s.entry_high) / 2.0,
+  s.stop, s.target,
+  'open', 'TEST_SEED_2026-05-27'
+FROM chaos.signals s
+WHERE s.ticker = 'AAPL' AND s.notes = 'TEST_SEED_2026-05-12';
+
+INSERT INTO chaos.paper_trades (signal_id, ticker, setup_type, conviction_score, entry_zone, stop, target, status, correlation_note)
+SELECT s.id, s.ticker, s.setup_type,
+  CASE s.conviction WHEN 'High' THEN 3 WHEN 'Med' THEN 2 WHEN 'Low' THEN 1 END,
+  (s.entry_low + s.entry_high) / 2.0,
+  s.stop, s.target,
+  'entry_missed', 'TEST_SEED_2026-05-27'
+FROM chaos.signals s
+WHERE s.ticker = 'TSLA' AND s.notes = 'TEST_SEED_2026-05-12';
+
 COMMIT;
 
 ------------------------------------------------------------------------------
--- 8. VERIFICATION
+-- 9. VERIFICATION
 ------------------------------------------------------------------------------
 -- Expected: signals_open=6, signals_triggered=2, signals_expired=2,
 --           trade_journal=2, shadow_trades=2, r_ratios=10, outcomes=1
+--           paper_trades_queue=5 (pending_entry, linked), paper_trades_open=1, paper_trades_missed=1
 
 SELECT 'signals_open'        AS bucket, count(*) FROM chaos.signals       WHERE status = 'open'      AND notes = 'TEST_SEED_2026-05-12'
 UNION ALL
@@ -162,4 +203,10 @@ SELECT 'r_ratios_computed',           count(*) FROM chaos.signals       WHERE r_
 UNION ALL
 SELECT 'outcomes_computed',           count(*) FROM chaos.trade_journal WHERE outcome IS NOT NULL  AND signal_id IN (SELECT id FROM chaos.signals WHERE notes = 'TEST_SEED_2026-05-12')
 UNION ALL
-SELECT 'paper_trades_closed_seed',    count(*) FROM chaos.paper_trades  WHERE correlation_note = 'TEST_SEED_2026-05-27';
+SELECT 'paper_trades_closed_seed',    count(*) FROM chaos.paper_trades  WHERE correlation_note = 'TEST_SEED_2026-05-27' AND signal_id IS NULL
+UNION ALL
+SELECT 'paper_trades_pending_entry',  count(*) FROM chaos.paper_trades  WHERE status = 'pending_entry' AND signal_id IN (SELECT id FROM chaos.signals WHERE notes = 'TEST_SEED_2026-05-12')
+UNION ALL
+SELECT 'paper_trades_open',           count(*) FROM chaos.paper_trades  WHERE status = 'open'          AND signal_id IN (SELECT id FROM chaos.signals WHERE notes = 'TEST_SEED_2026-05-12')
+UNION ALL
+SELECT 'paper_trades_entry_missed',   count(*) FROM chaos.paper_trades  WHERE status = 'entry_missed'  AND signal_id IN (SELECT id FROM chaos.signals WHERE notes = 'TEST_SEED_2026-05-12');

@@ -1,6 +1,6 @@
 // Shared components: Cards, badges, panels.
 import React from 'react';
-import { SETUP_LABELS, patchWillTake } from './data.js';
+import { SETUP_LABELS } from './data.js';
 
 export const cls = (...xs) => xs.filter(Boolean).join(' ');
 
@@ -86,10 +86,8 @@ function formatTimestamp(iso) {
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 }
 
-export function SignalCard({ signal, onOpen, onTake, onPass }) {
+export function SignalCard({ signal, onOpen, onTake }) {
   const [expanded, setExpanded] = React.useState(false);
-  const [willTake, setWillTake] = React.useState(signal.will_take);
-  const [updating, setUpdating] = React.useState(false);
 
   return (
     <Card stripe={convictionStripe(signal.conviction)}>
@@ -128,9 +126,8 @@ export function SignalCard({ signal, onOpen, onTake, onPass }) {
             </div>
           </div>
         </div>
-        <div className="mt-3 grid grid-cols-2 gap-2">
-          <button onClick={(e) => { e.stopPropagation(); onTake?.(signal.id); }} className="rounded-[8px] bg-[#3D5A7A] py-2.5 font-[Carlito] text-[12px] font-bold uppercase tracking-[0.1em] text-white active:bg-[#2c4361]">Take It</button>
-          <button onClick={(e) => { e.stopPropagation(); onPass?.(signal.id); }} className="rounded-[8px] border border-[#3D5A7A] bg-white py-2.5 font-[Carlito] text-[12px] font-bold uppercase tracking-[0.1em] text-[#3D5A7A] active:bg-[#EBF0F5]">Pass It</button>
+        <div className="mt-3">
+          <button onClick={(e) => { e.stopPropagation(); onTake?.(signal.id); }} className="w-full rounded-[8px] bg-[#3D5A7A] py-2.5 font-[Carlito] text-[12px] font-bold uppercase tracking-[0.1em] text-white active:bg-[#2c4361]">Take It</button>
         </div>
         {expanded && (
           <div className="mt-3 border-t border-[rgba(24,24,26,0.08)] pt-3">
@@ -152,35 +149,16 @@ export function SignalCard({ signal, onOpen, onTake, onPass }) {
               <p className="mb-3 font-[Carlito] text-[12px] leading-snug text-[#3C3C42]">{signal.memo}</p>
             )}
 
-            <div className="flex items-center justify-between">
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  const next = !willTake;
-                  setWillTake(next);
-                  setUpdating(true);
-                  patchWillTake(signal.id, next)
-                    .catch(() => setWillTake(willTake))
-                    .finally(() => setUpdating(false));
-                }}
-                disabled={updating}
-                className={`rounded-[8px] border px-3 py-1.5 font-[Carlito] text-[11px] font-bold uppercase tracking-[0.1em] ${
-                  willTake
-                    ? 'border-[#2E7D5A] bg-[#E8F4EE] text-[#2E7D5A]'
-                    : 'border-[rgba(24,24,26,0.14)] bg-white text-[#8A8A94]'
-                } disabled:opacity-50`}
-              >
-                {willTake ? 'Will Take ✓' : 'Will Take'}
-              </button>
-              {onOpen && (
+            {onOpen && (
+              <div className="flex justify-end">
                 <button
                   onClick={(e) => { e.stopPropagation(); onOpen(signal.id); }}
                   className="font-[Carlito] text-[10px] font-bold uppercase tracking-[0.1em] text-[#3D5A7A]"
                 >
                   View Detail →
                 </button>
-              )}
-            </div>
+              </div>
+            )}
           </div>
         )}
       </div>

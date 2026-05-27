@@ -59,13 +59,12 @@ function normalizeSignal(row) {
     memo_generated_at: row.memo_generated_at ?? null,
     memo_addendum: row.memo_addendum ?? null,
     addendum_generated_at: row.addendum_generated_at ?? null,
-    will_take: row.will_take ?? false,
   };
 }
 
 export async function fetchSignals() {
   const res = await fetch(
-    `${import.meta.env.VITE_SUPABASE_URL}/rest/v1/signals?status=eq.open&order=created_at.desc&limit=50`,
+    `${import.meta.env.VITE_SUPABASE_URL}/rest/v1/paper_trades?status=eq.pending_entry&select=*,signals!signal_id(*)&order=created_at.desc&limit=50`,
     {
       headers: {
         apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
@@ -76,7 +75,9 @@ export async function fetchSignals() {
   );
   if (!res.ok) throw new Error(`fetchSignals failed: ${res.status}`);
   const rows = await res.json();
-  return rows.map(normalizeSignal);
+  return rows
+    .filter(pt => pt.signals && pt.signals.status !== 'triggered')
+    .map(pt => normalizeSignal(pt.signals));
 }
 
 export async function fetchSignalById(id) {
@@ -237,24 +238,6 @@ export async function activateCriteriaVersion({ setupType, versionId }) {
   if (!activateRes.ok) throw new Error(`activateCriteriaVersion activate failed: ${activateRes.status}`);
 }
 
-export async function patchWillTake(id, value) {
-  const res = await fetch(
-    `${import.meta.env.VITE_SUPABASE_URL}/rest/v1/signals?id=eq.${id}`,
-    {
-      method: 'PATCH',
-      headers: {
-        apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
-        Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
-        'Accept-Profile': 'chaos',
-        'Content-Profile': 'chaos',
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ will_take: value }),
-    }
-  );
-  if (!res.ok) throw new Error(`patchWillTake failed: ${res.status}`);
-}
-
 /** Parses JSON text; returns { ok, value, error }. */
 export function parseThresholdJson(text) {
   try {
@@ -312,6 +295,24 @@ export async function fetchOpenPositions() {
     }
   );
   if (!res.ok) throw new Error(`fetchOpenPositions failed: ${res.status}`);
+  return res.json();
+}
+
+/** Fetch paper_trades where status='open' (auto-filled entry window), joined to signals */
+export async function fetchPaperOpenPositions() {
+  const url = import.meta.env.VITE_SUPABASE_URL;
+  const key = import.meta.env.VITE_SUPABASE_ANON_KEY;
+  const res = await fetch(
+    `${url}/rest/v1/paper_trades?status=eq.open&select=*,signals!signal_id(ticker,setup_type)&order=created_at.desc`,
+    {
+      headers: {
+        apikey: key,
+        Authorization: `Bearer ${key}`,
+        'Accept-Profile': 'chaos',
+      },
+    }
+  );
+  if (!res.ok) throw new Error(`fetchPaperOpenPositions failed: ${res.status}`);
   return res.json();
 }
 
