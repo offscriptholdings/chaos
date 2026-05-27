@@ -41,25 +41,6 @@ export async function takeTrade({ signalId, tradeMode, entry, stop }) {
   if (!patchRes.ok) throw new Error(`takeTrade signal patch failed: ${patchRes.status}`);
 }
 
-/** INSERT shadow_trades + PATCH signal to expired */
-export async function passTrade({ signalId, reasonPassed }) {
-  const shadowRes = await fetch(`${SUPABASE_URL}/rest/v1/shadow_trades`, {
-    method: 'POST',
-    headers: WRITE_H,
-    body: JSON.stringify({
-      signal_id: signalId,
-      reason_passed: reasonPassed || null,
-    }),
-  });
-  if (!shadowRes.ok) throw new Error(`passTrade shadow insert failed: ${shadowRes.status}`);
-
-  const patchRes = await fetch(`${SUPABASE_URL}/rest/v1/signals?id=eq.${signalId}`, {
-    method: 'PATCH',
-    headers: WRITE_H,
-    body: JSON.stringify({ status: 'expired' }),
-  });
-  if (!patchRes.ok) throw new Error(`passTrade signal patch failed: ${patchRes.status}`);
-}
 
 /** Fetch all trade_journal rows, newest first */
 export async function fetchJournal() {
@@ -89,12 +70,3 @@ export async function closeTrade({ tradeId, actualExit, exitRationale, entryRati
   return res.json();
 }
 
-/** Fetch shadow_trades joined to signals, newest first */
-export async function fetchShadowTrades() {
-  const res = await fetch(
-    `${SUPABASE_URL}/rest/v1/shadow_trades?select=*,signals(ticker,setup_type)&order=created_at.desc&limit=50`,
-    { headers: READ_H }
-  );
-  if (!res.ok) throw new Error(`fetchShadowTrades failed: ${res.status}`);
-  return res.json();
-}

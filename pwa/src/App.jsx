@@ -1,19 +1,18 @@
 // Main App: bottom-nav shell + tab routing.
 import React from 'react';
 import {
-  IconActivity, IconList, IconEye, IconBookOpen, IconTrendingUp,
+  IconActivity, IconList, IconBookOpen, IconTrendingUp,
   IconBarChart3, IconSlidersHorizontal, IconFileSearch, IconArrowLeft, IconBell, IconTarget,
 } from './icons.jsx';
 import { AppBar } from './components.jsx';
 import {
-  DashboardView, SignalQueueView, SignalDetailView, ShadowTradesView,
+  DashboardView, SignalQueueView, SignalDetailView,
   JournalView, SentimentView, BacktestView, CriteriaView, PerformanceView,
 } from './views.jsx';
 
 const TABS = [
   { key: 'dashboard',     label: 'Dash',     Icon: IconActivity,          title: 'Chaos',   italic: 'Dashboard' },
   { key: 'queue',         label: 'Signals',  Icon: IconList,              title: 'Signal',  italic: 'Queue' },
-  { key: 'shadow',        label: 'Shadow',   Icon: IconEye,               title: 'Shadow',  italic: 'Trades' },
   { key: 'journal',       label: 'Journal',  Icon: IconBookOpen,          title: 'Journal' },
   { key: 'sentiment',     label: 'Intel',    Icon: IconTrendingUp,        title: 'Market',  italic: 'Intel' },
   { key: 'backtest',      label: 'Backtest', Icon: IconBarChart3,         title: 'Backtest' },
@@ -53,7 +52,6 @@ const App = () => {
         {active === 'dashboard'     && <DashboardView openSignal={openSignal} goToQueue={() => setActive('queue')} />}
         {active === 'queue'         && <SignalQueueView openSignal={openSignal} />}
         {active === 'signal_detail' && <SignalDetailView signalId={signalId} back={() => setActive('queue')} />}
-        {active === 'shadow'        && <ShadowTradesView />}
         {active === 'journal'       && <JournalView />}
         {active === 'sentiment'     && <SentimentView />}
         {active === 'backtest'      && <BacktestView />}
