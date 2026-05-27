@@ -12,6 +12,7 @@ import {
   fetchSignals, fetchSignalById, fetchCriteria, parseThresholds,
   fetchOpenPositions, fetchRegime, fetchSentiment,
   fetchAllVersionsForSetup, saveDraftCriteria, activateCriteriaVersion, parseThresholdJson,
+  fetchClosedPaperTrades,
 } from './data.js';
 import { takeTrade, passTrade, fetchJournal, closeTrade, fetchShadowTrades } from './api/trades.js';
 
@@ -1186,6 +1187,136 @@ export const CriteriaView = () => {
           onActivated={() => { setEditor(null); loadVersions(setupType); }}
         />
       )}
+    </div>
+  );
+};
+
+const CONVICTION_LABELS = { 3: 'High', 2: 'Med', 1: 'Low' };
+const CONVICTION_SCORE_ORDER = [3, 2, 1];
+
+function calcGroupStats(trades) {
+  const n = trades.length;
+  const wins = trades.filter(t => t.outcome === 'target_hit').length;
+  const winRate = n > 0 ? Math.round((wins / n) * 100) : null;
+  const rVals = trades.map(t => t.r_multiple).filter(v => v != null).map(Number);
+  const expectancy = rVals.length > 0 ? rVals.reduce((s, v) => s + v, 0) / rVals.length : null;
+  const winRVals = trades.filter(t => t.outcome === 'target_hit').map(t => t.r_multiple).filter(v => v != null).map(Number);
+  const avgWinR = winRVals.length > 0 ? winRVals.reduce((s, v) => s + v, 0) / winRVals.length : null;
+  return { n, wins, winRate, expectancy, avgWinR };
+}
+
+const fmtPct = (v) => v == null ? '—' : `${v}%`;
+const fmtR = (v) => v == null ? '—' : `${v >= 0 ? '+' : ''}${v.toFixed(2)}R`;
+
+const convColor = (label) =>
+  label === 'High' ? { fg: '#2E7D5A', bg: '#E8F4EE' }
+  : label === 'Med' ? { fg: '#B8893A', bg: '#F5EDD8' }
+  : { fg: '#8A8A94', bg: '#F2F0EC' };
+
+export const PerformanceView = () => {
+  const [trades, setTrades] = React.useState(null);
+
+  React.useEffect(() => {
+    fetchClosedPaperTrades()
+      .then(setTrades)
+      .catch(() => setTrades([]));
+  }, []);
+
+  if (trades === null) {
+    return <div className="p-4 pb-24 font-[Carlito] text-[13px] text-[#8A8A94] text-center">Loading…</div>;
+  }
+
+  if (trades.length === 0) {
+    return (
+      <div className="flex flex-col gap-3 p-4 pb-24">
+        <div className="mt-16 py-8 text-center font-[Carlito] text-[13px] leading-relaxed text-[#8A8A94]">
+          No resolved trades yet — calibration fills in as paper trades close.
+        </div>
+      </div>
+    );
+  }
+
+  const unscoredTrades = trades.filter(t => t.conviction_score == null);
+  const convictionRows = CONVICTION_SCORE_ORDER.map(score => ({
+    label: CONVICTION_LABELS[score],
+    score,
+    ...calcGroupStats(trades.filter(t => t.conviction_score === score)),
+  }));
+  if (unscoredTrades.length > 0) {
+    convictionRows.push({ label: 'Unscored', score: null, ...calcGroupStats(unscoredTrades) });
+  }
+
+  const setupMap = new Map();
+  for (const t of trades) {
+    const key = t.setup_type ?? 'unknown';
+    if (!setupMap.has(key)) setupMap.set(key, []);
+    setupMap.get(key).push(t);
+  }
+  const setupRows = Array.from(setupMap.entries())
+    .map(([key, rows]) => ({ key, label: SETUP_LABELS[key] ?? key, ...calcGroupStats(rows) }))
+    .sort((a, b) => (b.expectancy ?? -Infinity) - (a.expectancy ?? -Infinity));
+
+  return (
+    <div className="flex flex-col gap-3 p-4 pb-24">
+      <SectionHeader title="Conviction Calibration" />
+      <Card>
+        <div className="divide-y divide-[rgba(24,24,26,0.07)]">
+          {convictionRows.map(({ label, score, winRate, expectancy, n }) => {
+            const cc = convColor(label);
+            const expPos = expectancy != null && expectancy > 0;
+            const expNeg = expectancy != null && expectancy <= 0;
+            return (
+              <div key={score ?? 'unscored'} className="flex items-center gap-3 px-3.5 py-3">
+                <div style={{ minWidth: 64 }}>
+                  <span
+                    className="inline-flex items-center rounded-full px-2 py-[2px] font-[Carlito] text-[10px] font-bold uppercase tracking-[0.1em]"
+                    style={{ color: cc.fg, background: cc.bg }}
+                  >
+                    {label}
+                  </span>
+                </div>
+                <div className="flex flex-1 items-start gap-4">
+                  <div className="flex flex-col gap-[2px]">
+                    <div className="font-[Carlito] text-[10px] uppercase tracking-[0.08em] text-[#8A8A94]">Win %</div>
+                    <div className={cls("font-['DM_Mono'] text-[13px]", winRate != null && winRate > 50 ? 'text-[#2E7D5A]' : winRate != null ? 'text-[#C0392B]' : 'text-[#8A8A94]')}>
+                      {fmtPct(winRate)}
+                    </div>
+                  </div>
+                  <div className="flex flex-col gap-[2px]">
+                    <div className="font-[Carlito] text-[10px] uppercase tracking-[0.08em] text-[#8A8A94]">Expectancy</div>
+                    <div className={cls("font-['DM_Mono'] text-[13px]", expPos ? 'text-[#2E7D5A]' : expNeg ? 'text-[#C0392B]' : 'text-[#8A8A94]')}>
+                      {fmtR(expectancy)}
+                    </div>
+                  </div>
+                  <div className="ml-auto flex flex-col gap-[2px] text-right">
+                    <div className="font-[Carlito] text-[10px] uppercase tracking-[0.08em] text-[#8A8A94]">N</div>
+                    <div className="font-['DM_Mono'] text-[13px] text-[#8A8A94]">{n}</div>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </Card>
+
+      <SectionHeader title={`By Setup · ${setupRows.length}`} />
+      {setupRows.map(({ key, label, winRate, expectancy, avgWinR, n }) => {
+        const expPos = expectancy != null && expectancy > 0;
+        const expNeg = expectancy != null && expectancy <= 0;
+        return (
+          <Card key={key}>
+            <div className="px-3.5 pb-3 pt-3.5">
+              <div className="mb-2 font-[Carlito] text-[10px] font-bold uppercase tracking-[0.12em] text-[#5A7A9E]">{label}</div>
+              <div className="grid grid-cols-4 gap-2 rounded-[8px] border border-[rgba(24,24,26,0.08)] bg-[#F2F0EC] px-3 py-2.5">
+                <Stat label="Win %" value={fmtPct(winRate)} valueClass={winRate != null && winRate > 50 ? 'text-[#2E7D5A]' : winRate != null ? 'text-[#C0392B]' : undefined} />
+                <Stat label="Expectancy" value={fmtR(expectancy)} valueClass={expPos ? 'text-[#2E7D5A]' : expNeg ? 'text-[#C0392B]' : undefined} />
+                <Stat label="Avg Win R" value={avgWinR != null ? `+${avgWinR.toFixed(2)}R` : '—'} valueClass={avgWinR != null ? 'text-[#2E7D5A]' : undefined} />
+                <Stat label="N" value={String(n)} />
+              </div>
+            </div>
+          </Card>
+        );
+      })}
     </div>
   );
 };

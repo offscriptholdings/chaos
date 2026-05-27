@@ -354,6 +354,15 @@ export async function fetchRegime() {
   };
 }
 
+export async function fetchClosedPaperTrades() {
+  const res = await fetch(
+    `${import.meta.env.VITE_SUPABASE_URL}/rest/v1/paper_trades?select=conviction_score,setup_type,outcome,r_multiple&status=eq.closed`,
+    { headers: { apikey: import.meta.env.VITE_SUPABASE_ANON_KEY, Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`, 'Accept-Profile': 'chaos' } }
+  );
+  if (!res.ok) return [];
+  return res.json();
+}
+
 export async function fetchSentiment() {
   const url = import.meta.env.VITE_SUPABASE_URL;
   const key = import.meta.env.VITE_SUPABASE_ANON_KEY;
