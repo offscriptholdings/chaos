@@ -364,6 +364,25 @@ export async function fetchClosedPaperTrades() {
   return res.json();
 }
 
+export async function fetchSetupDetail(setupType) {
+  try {
+    const res = await fetch(
+      `${import.meta.env.VITE_SUPABASE_URL}/rest/v1/paper_trades?setup_type=eq.${encodeURIComponent(setupType)}&status=in.(open,closed)&select=id,ticker,setup_type,conviction_score,status,outcome,r_multiple,entry_zone,stop,target,bars_to_exit,mfe_r,mae_r,post_exit_run_r,entry_confirmed_at,resolved_at,signals!signal_id(signal_date)&order=resolved_at.desc.nullslast`,
+      {
+        headers: {
+          apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
+          Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+          'Accept-Profile': 'chaos',
+        },
+      }
+    );
+    if (!res.ok) return [];
+    return res.json();
+  } catch {
+    return [];
+  }
+}
+
 export async function fetchSentiment() {
   const url = import.meta.env.VITE_SUPABASE_URL;
   const key = import.meta.env.VITE_SUPABASE_ANON_KEY;
