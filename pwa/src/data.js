@@ -316,11 +316,64 @@ export async function fetchPaperOpenPositions() {
   return res.json();
 }
 
-export const BACKTESTS = [
-  { id: 'bt-1', name: 'EMA Pullback / SPY universe / 1y', winRate: 0.58, expectancy: 0.72, trades: 142, sharpe: 1.34 },
-  { id: 'bt-2', name: 'BB Squeeze / Liquid US / 6mo', winRate: 0.49, expectancy: 0.91, trades: 88, sharpe: 1.61 },
-  { id: 'bt-3', name: 'Momentum / Top 50 by ADV / 2y', winRate: 0.54, expectancy: 0.45, trades: 318, sharpe: 1.05 },
-];
+export async function fetchBacktestRuns() {
+  const url = `${import.meta.env.VITE_SUPABASE_URL}/rest/v1/backtest_runs` +
+    `?select=id,setup_type,ticker_universe,status,progress_pct,tickers_processed,tickers_total,` +
+    `current_step,error_message,created_at,date_range_start,date_range_end,` +
+    `backtest_results!run_id(win_rate,avg_r,best_r,worst_r,max_drawdown,total_signals,total_trades)` +
+    `&order=created_at.desc&limit=20`;
+  const key = import.meta.env.VITE_SUPABASE_ANON_KEY;
+  const res = await fetch(url, {
+    headers: {
+      apikey: key,
+      Authorization: `Bearer ${key}`,
+      'Accept-Profile': 'chaos',
+    },
+  });
+  if (!res.ok) throw new Error(`fetchBacktestRuns failed: ${res.status}`);
+  return res.json();
+}
+
+export async function insertBacktestRun({ setup_type, ticker_universe, date_range_start, date_range_end }) {
+  const key = import.meta.env.VITE_SUPABASE_ANON_KEY;
+  const base = import.meta.env.VITE_SUPABASE_URL;
+  const criteriaRes = await fetch(
+    `${base}/rest/v1/trading_criteria?setup_type=eq.${encodeURIComponent(setup_type)}&is_active=eq.true&select=id`,
+    { headers: { apikey: key, Authorization: `Bearer ${key}`, 'Accept-Profile': 'chaos' } },
+  );
+  let criteria_version_id = null;
+  if (criteriaRes.ok) {
+    const rows = await criteriaRes.json();
+    if (rows.length > 0) criteria_version_id = rows[0].id;
+  }
+  const insertRes = await fetch(`${base}/rest/v1/backtest_runs`, {
+    method: 'POST',
+    headers: {
+      apikey: key,
+      Authorization: `Bearer ${key}`,
+      'Content-Profile': 'chaos',
+      'Content-Type': 'application/json',
+      Prefer: 'return=representation',
+    },
+    body: JSON.stringify({ setup_type, ticker_universe, date_range_start, date_range_end, criteria_version_id, triggered_by: 'pwa' }),
+  });
+  if (!insertRes.ok) throw new Error(`insertBacktestRun failed: ${insertRes.status}`);
+  const rows = await insertRes.json();
+  return rows[0];
+}
+
+export async function triggerBacktestWebhook(runId) {
+  try {
+    const res = await fetch('https://n8n.meridiantechco.com/webhook/chaos-backtest-run', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ run_id: runId }),
+    });
+    if (!res.ok) console.warn(`triggerBacktestWebhook non-2xx: ${res.status}`);
+  } catch (e) {
+    console.warn('triggerBacktestWebhook error:', e);
+  }
+}
 
 export const SENTIMENT = {
   headline: 'Risk-on, narrow leadership',

@@ -8,11 +8,11 @@ import {
   IconArrowLeft, IconRefresh, IconPlay, IconCheck, IconChevronRight, IconSparkle, IconX,
 } from './icons.jsx';
 import {
-  SETUP_LABELS, JOURNAL, SETUPS, BACKTESTS, SENTIMENT, REGIME,
+  SETUP_LABELS, JOURNAL, SETUPS, SENTIMENT, REGIME,
   fetchSignals, fetchSignalById, fetchCriteria, parseThresholds,
   fetchOpenPositions, fetchPaperOpenPositions, fetchRegime, fetchSentiment,
   fetchAllVersionsForSetup, saveDraftCriteria, activateCriteriaVersion, parseThresholdJson,
-  fetchClosedPaperTrades,
+  fetchClosedPaperTrades, fetchBacktestRuns, insertBacktestRun, triggerBacktestWebhook,
 } from './data.js';
 import { takeTrade, fetchJournal, closeTrade } from './api/trades.js';
 
@@ -722,10 +722,63 @@ export const SentimentView = () => {
   );
 };
 
+function periodToDateRange(period) {
+  const end = new Date();
+  const start = new Date(end);
+  const map = { '3mo': [0, 3], '6mo': [0, 6], '1y': [1, 0], '2y': [2, 0] };
+  const [years, months] = map[period] ?? [1, 0];
+  start.setFullYear(start.getFullYear() - years);
+  start.setMonth(start.getMonth() - months);
+  const fmt = (d) => d.toISOString().split('T')[0];
+  return { date_range_start: fmt(start), date_range_end: fmt(end) };
+}
+
 export const BacktestView = () => {
   const [setup, setSetup] = React.useState('ema_pullback');
   const [universe, setUniverse] = React.useState('SPY');
   const [period, setPeriod] = React.useState('1y');
+  const [runs, setRuns] = React.useState([]);
+  const [loadingRuns, setLoadingRuns] = React.useState(true);
+  const [runError, setRunError] = React.useState(null);
+  const [submitting, setSubmitting] = React.useState(false);
+  const pollRef = React.useRef(null);
+
+  React.useEffect(() => {
+    fetchBacktestRuns()
+      .then((data) => { setRuns(data); setLoadingRuns(false); })
+      .catch(() => { setRunError('Failed to load runs'); setLoadingRuns(false); });
+  }, []);
+
+  React.useEffect(() => {
+    const hasRunning = runs.some((r) => r.status === 'running');
+    if (hasRunning && !pollRef.current) {
+      pollRef.current = setInterval(async () => {
+        const fresh = await fetchBacktestRuns();
+        setRuns(fresh);
+      }, 5000);
+    }
+    if (!hasRunning && pollRef.current) {
+      clearInterval(pollRef.current);
+      pollRef.current = null;
+    }
+    return () => { if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; } };
+  }, [runs]);
+
+  async function handleRun() {
+    setSubmitting(true);
+    try {
+      const { date_range_start, date_range_end } = periodToDateRange(period);
+      const row = await insertBacktestRun({ setup_type: setup, ticker_universe: universe, date_range_start, date_range_end });
+      await triggerBacktestWebhook(row.id);
+      const fresh = await fetchBacktestRuns();
+      setRuns(fresh);
+    } catch (e) {
+      setRunError('Failed to start backtest — ' + e.message);
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
   const Field = ({ label, children }) => (
     <div className="flex flex-col gap-1">
       <div className="font-[Carlito] text-[10px] font-bold uppercase tracking-[0.1em] text-[#8A8A94]">{label}</div>
@@ -737,6 +790,7 @@ export const BacktestView = () => {
       {children}
     </button>
   );
+
   return (
     <div className="flex flex-col gap-3 p-4 pb-24">
       <Card>
@@ -756,28 +810,76 @@ export const BacktestView = () => {
               {['3mo', '6mo', '1y', '2y'].map((p) => <Pill key={p} active={period === p} onClick={() => setPeriod(p)}>{p}</Pill>)}
             </div>
           </Field>
-          <button className="mt-1 flex items-center justify-center gap-1.5 rounded-[10px] bg-[#3D5A7A] py-3 font-[Carlito] text-[12px] font-bold uppercase tracking-[0.1em] text-white active:bg-[#2c4361]">
-            <IconPlay size={13} /> Run Backtest
+          <button
+            onClick={handleRun}
+            disabled={submitting}
+            className="mt-1 flex items-center justify-center gap-1.5 rounded-[10px] bg-[#3D5A7A] py-3 font-[Carlito] text-[12px] font-bold uppercase tracking-[0.1em] text-white active:bg-[#2c4361] disabled:opacity-50"
+          >
+            <IconPlay size={13} /> {submitting ? 'Starting…' : 'Run Backtest'}
           </button>
         </div>
       </Card>
       <SectionHeader title="Recent Runs" />
-      {BACKTESTS.map((b) => (
-        <Card key={b.id}>
-          <div className="px-3.5 pb-3 pt-3.5">
-            <div className="flex items-start justify-between">
-              <span className="font-[Carlito] text-[12px] font-bold text-[#18181A]">{b.name}</span>
-              <IconChevronRight size={16} stroke="#8A8A94" />
-            </div>
-            <div className="mt-2 grid grid-cols-4 gap-2 rounded-[8px] border border-[rgba(24,24,26,0.08)] bg-[#F2F0EC] px-3 py-2.5">
-              <Stat label="Win %" value={`${(b.winRate * 100).toFixed(0)}`} />
-              <Stat label="Exp R" value={`${b.expectancy.toFixed(2)}`} valueClass="text-[#2E7D5A]" />
-              <Stat label="Trades" value={`${b.trades}`} />
-              <Stat label="Sharpe" value={`${b.sharpe.toFixed(2)}`} />
-            </div>
-          </div>
+      {runError && (
+        <p className="font-[Carlito] text-[13px] text-[#C0392B]">{runError}</p>
+      )}
+      {loadingRuns ? (
+        <p className="font-[Carlito] text-[13px] text-[#8A8A94]">Loading…</p>
+      ) : runs.length === 0 ? (
+        <Card>
+          <p className="px-3.5 py-4 font-[Carlito] text-[13px] text-[#8A8A94]">
+            No backtest runs yet. Configure above and click Run Backtest.
+          </p>
         </Card>
-      ))}
+      ) : runs.map((run) => {
+        const rangeLabel = run.date_range_start && run.date_range_end
+          ? `${run.date_range_start.slice(0, 7)} → ${run.date_range_end.slice(0, 7)}`
+          : '';
+        const runLabel = `${SETUP_LABELS[run.setup_type] ?? run.setup_type} / ${run.ticker_universe} / ${rangeLabel}`;
+        return (
+          <Card key={run.id}>
+            <div className="px-3.5 pb-3 pt-3.5">
+              <div className="flex items-start justify-between">
+                <span className="font-[Carlito] text-[12px] font-bold text-[#18181A]">{runLabel}</span>
+                <IconChevronRight size={16} stroke="#8A8A94" />
+              </div>
+              {run.status === 'queued' && (
+                <span className="mt-2 inline-block rounded-full bg-[#F2F0EC] px-2.5 py-1 font-[Carlito] text-[11px] font-bold uppercase tracking-[0.08em] text-[#8A8A94]">Queued</span>
+              )}
+              {run.status === 'running' && (
+                <div className="mt-2">
+                  {run.current_step && (
+                    <p className="mb-1 font-[Carlito] text-[11px] text-[#8A8A94]">{run.current_step}</p>
+                  )}
+                  <div className="h-1.5 w-full rounded-full bg-[#F2F0EC]">
+                    <div
+                      className="h-1.5 rounded-full bg-[#3D5A7A]"
+                      style={{ width: `${run.tickers_total ? Math.round((run.tickers_processed / run.tickers_total) * 100) : (run.progress_pct ?? 0)}%` }}
+                    />
+                  </div>
+                  <p className="mt-1 font-[Carlito] text-[11px] text-[#8A8A94]">
+                    {run.tickers_total ? `${run.tickers_processed ?? 0} / ${run.tickers_total} tickers` : `${run.progress_pct ?? 0}%`}
+                  </p>
+                </div>
+              )}
+              {run.status === 'complete' && (() => {
+                const r = run.backtest_results?.[0];
+                return (
+                  <div className="mt-2 grid grid-cols-4 gap-2 rounded-[8px] border border-[rgba(24,24,26,0.08)] bg-[#F2F0EC] px-3 py-2.5">
+                    <Stat label="Win %" value={r ? `${(r.win_rate * 100).toFixed(0)}%` : '—'} />
+                    <Stat label="Avg R" value={r ? r.avg_r?.toFixed(2) ?? '—' : '—'} valueClass="text-[#2E7D5A]" />
+                    <Stat label="Trades" value={r ? String(r.total_trades) : '—'} />
+                    <Stat label="MaxDD" value={r ? `${(r.max_drawdown * 100).toFixed(1)}%` : '—'} />
+                  </div>
+                );
+              })()}
+              {run.status === 'error' && (
+                <p className="mt-2 font-[Carlito] text-[11px] text-[#C0392B]">{run.error_message}</p>
+              )}
+            </div>
+          </Card>
+        );
+      })}
     </div>
   );
 };
