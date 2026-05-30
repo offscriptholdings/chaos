@@ -361,9 +361,9 @@ export const SignalQueueView = ({ openSignal }) => {
           ))}
         </div>
       )}
-      <div className="flex flex-col gap-2.5">
+      <div className="grid gap-2.5 min-[744px]:grid-cols-2 min-[1024px]:grid-cols-3">
         {displayed.length === 0 ? (
-          <div className="font-[Carlito] text-[13px] text-[#8A8A94] p-4 text-center">No signals match filter.</div>
+          <div className="min-[744px]:col-span-2 min-[1024px]:col-span-3 font-[Carlito] text-[13px] text-[#8A8A94] p-4 text-center">No signals match filter.</div>
         ) : displayed.map((s) => (
           <SignalCard key={s.id} signal={s} onOpen={openSignal}
             onTake={(id) => {
@@ -1160,7 +1160,7 @@ export const PerformanceView = () => {
       <SectionHeader title="Conviction Calibration" />
       <Card>
         <div className="divide-y divide-[rgba(24,24,26,0.07)]">
-          {convictionRows.map(({ label, score, winRate, expectancy, n }) => {
+          {convictionRows.map(({ label, score, winRate, expectancy, avgWinR, n }) => {
             const cc = convColor(label);
             const expPos = expectancy != null && expectancy > 0;
             const expNeg = expectancy != null && expectancy <= 0;
@@ -1185,6 +1185,12 @@ export const PerformanceView = () => {
                     <div className="font-[Carlito] text-[10px] uppercase tracking-[0.08em] text-[#8A8A94]">Expectancy</div>
                     <div className={cls("font-['DM_Mono'] text-[13px]", expPos ? 'text-[#2E7D5A]' : expNeg ? 'text-[#C0392B]' : 'text-[#8A8A94]')}>
                       {fmtR(expectancy)}
+                    </div>
+                  </div>
+                  <div className="hidden min-[744px]:flex flex-col gap-[2px]">
+                    <div className="font-[Carlito] text-[10px] uppercase tracking-[0.08em] text-[#8A8A94]">Avg Win R</div>
+                    <div className={cls("font-['DM_Mono'] text-[13px]", avgWinR != null ? 'text-[#2E7D5A]' : 'text-[#8A8A94]')}>
+                      {avgWinR != null ? `+${avgWinR.toFixed(2)}R` : '—'}
                     </div>
                   </div>
                   <div className="ml-auto flex flex-col gap-[2px] text-right">
