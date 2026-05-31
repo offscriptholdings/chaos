@@ -10,7 +10,7 @@ import {
 import {
   SETUP_LABELS, JOURNAL, SETUPS, SENTIMENT, REGIME,
   fetchSignals, fetchSignalById, fetchCriteria, parseThresholds,
-  fetchOpenPositions, fetchPaperOpenPositions, fetchRegime, fetchSentiment,
+  fetchOpenPositions, fetchPaperOpenPositions, fetchRegime, fetchIntelBrief,
   fetchAllVersionsForSetup, saveDraftCriteria, activateCriteriaVersion, parseThresholdJson,
   fetchClosedPaperTrades, fetchBacktestRuns, insertBacktestRun, triggerBacktestWebhook, fetchSetupDetail,
 } from './data.js';
@@ -677,41 +677,99 @@ export const JournalView = () => {
 };
 
 export const SentimentView = () => {
-  const [intel, setIntel] = React.useState(null);
+  const [data, setData] = React.useState(null);
   const [loading, setLoading] = React.useState(true);
+  const [error, setError] = React.useState(null);
 
   const load = () => {
     setLoading(true);
-    fetchSentiment()
-      .then(data => { setIntel(data); setLoading(false); })
-      .catch(() => setLoading(false));
+    setError(null);
+    fetchIntelBrief()
+      .then(row => { setData(row); setLoading(false); })
+      .catch(e => { setError(e.message); setLoading(false); });
   };
 
   React.useEffect(() => { load(); }, []);
 
-  const headline = intel?.headline ?? '—';
-  const body = intel?.body ?? '';
-  const ts = intel?.ts ?? '';
+  const isStale = data?.generated_at
+    ? Date.now() - new Date(data.generated_at).getTime() > 24 * 60 * 60 * 1000
+    : false;
+
+  const dateLabel = data?.brief_date
+    ? new Date(data.brief_date).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })
+    : '';
 
   return (
     <div className="flex flex-col gap-3 p-4 pb-24">
       <Card>
         <div className="px-3.5 pb-3.5 pt-3.5">
-          <div className="flex items-center gap-1.5">
-            <IconSparkle size={14} stroke="#3D5A7A" />
-            <span className="font-[Carlito] text-[10px] font-bold uppercase tracking-[0.14em] text-[#3D5A7A]">AI Market Intel</span>
-            <span className="ml-auto font-['DM_Mono'] text-[10px] text-[#8A8A94]">{ts}</span>
-          </div>
-          {loading && !intel ? (
-            <p className="mt-2 font-[Carlito] text-[13px] text-[#8A8A94]">Loading…</p>
-          ) : (
+          {/* loading */}
+          {loading && data === null && (
+            <p className="font-[Carlito] text-[13px] text-[#8A8A94]">Loading…</p>
+          )}
+
+          {/* error */}
+          {!loading && error !== null && (
+            <div className="flex flex-col gap-2">
+              <p className="font-[Carlito] text-[13px] text-[#C0392B]">{error}</p>
+              <button
+                onClick={load}
+                className="self-start font-[Carlito] text-[12px] font-bold text-[#3D5A7A] underline"
+              >
+                Retry
+              </button>
+            </div>
+          )}
+
+          {/* empty */}
+          {!loading && error === null && data === null && (
+            <p className="text-center font-[Carlito] text-[13px] text-[#8A8A94]">Intel brief generates at 5am ET</p>
+          )}
+
+          {/* loaded */}
+          {data !== null && (
             <>
-              <h2 className="mt-2 font-['Playfair_Display'] text-[22px] font-bold leading-tight text-[#18181A]">{headline}</h2>
-              <p className="mt-2 font-[Carlito] text-[13px] leading-snug text-[#3C3C42]">{body}</p>
+              <p
+                className="font-['Playfair_Display'] text-[13px] uppercase tracking-[0.08em] text-[#3D5A7A]"
+              >
+                INTEL — {dateLabel}
+              </p>
+
+              {isStale && (
+                <span className="mt-2 inline-block rounded border border-[#B8893A] px-1.5 py-0.5 font-[Carlito] text-[10px] text-[#B8893A]">
+                  Brief is stale
+                </span>
+              )}
+
+              <p className="mt-2 font-['Playfair_Display'] text-[20px] italic leading-tight text-[#18181A]">
+                {data.narrative}
+              </p>
+
+              {Array.isArray(data.sections) && data.sections.map((section, si) => (
+                <div key={si}>
+                  <p className="mt-[14px] mb-1 font-[Carlito] text-[10px] font-bold uppercase tracking-[0.1em] text-[#B8893A]">
+                    {section.header}
+                  </p>
+                  {Array.isArray(section.items) && section.items.map((item, ii) => (
+                    <div key={ii} className="flex items-baseline gap-2">
+                      <span className="flex-1 font-[Carlito] text-[13px] text-[#3C3C42]">{item.label}</span>
+                      {item.tag && (
+                        <span className="font-['DM_Mono'] text-[11px] text-[#8A8A94]">{item.tag}</span>
+                      )}
+                    </div>
+                  ))}
+                  {section.commentary && (
+                    <p className="mt-1 pl-2 font-[Carlito] text-[13px] italic text-[#8A8A94]">
+                      {section.commentary}
+                    </p>
+                  )}
+                </div>
+              ))}
             </>
           )}
         </div>
       </Card>
+
       <button
         onClick={load}
         className="mt-1 flex items-center justify-center gap-1.5 rounded-[10px] border border-[#3D5A7A] bg-white py-3 font-[Carlito] text-[11px] font-bold uppercase tracking-[0.1em] text-[#3D5A7A] active:bg-[#EBF0F5]"
