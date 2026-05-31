@@ -12,7 +12,7 @@ import {
   fetchSignals, fetchSignalById, fetchCriteria, parseThresholds,
   fetchOpenPositions, fetchPaperOpenPositions, fetchRegime, fetchSentiment,
   fetchAllVersionsForSetup, saveDraftCriteria, activateCriteriaVersion, parseThresholdJson,
-  fetchClosedPaperTrades, fetchBacktestRuns, insertBacktestRun, triggerBacktestWebhook,
+  fetchClosedPaperTrades, fetchBacktestRuns, insertBacktestRun, triggerBacktestWebhook, fetchSetupDetail,
 } from './data.js';
 import { takeTrade, fetchJournal, closeTrade } from './api/trades.js';
 
@@ -361,9 +361,9 @@ export const SignalQueueView = ({ openSignal }) => {
           ))}
         </div>
       )}
-      <div className="flex flex-col gap-2.5">
+      <div className="grid gap-2.5 min-[744px]:grid-cols-2 min-[1024px]:grid-cols-3">
         {displayed.length === 0 ? (
-          <div className="font-[Carlito] text-[13px] text-[#8A8A94] p-4 text-center">No signals match filter.</div>
+          <div className="min-[744px]:col-span-2 min-[1024px]:col-span-3 font-[Carlito] text-[13px] text-[#8A8A94] p-4 text-center">No signals match filter.</div>
         ) : displayed.map((s) => (
           <SignalCard key={s.id} signal={s} onOpen={openSignal}
             onTake={(id) => {
@@ -1214,7 +1214,7 @@ const convColor = (label) =>
   : label === 'Med' ? { fg: '#B8893A', bg: '#F5EDD8' }
   : { fg: '#8A8A94', bg: '#F2F0EC' };
 
-export const PerformanceView = () => {
+export const PerformanceView = ({ onOpenDetail }) => {
   const [trades, setTrades] = React.useState(null);
 
   React.useEffect(() => {
@@ -1262,7 +1262,7 @@ export const PerformanceView = () => {
       <SectionHeader title="Conviction Calibration" />
       <Card>
         <div className="divide-y divide-[rgba(24,24,26,0.07)]">
-          {convictionRows.map(({ label, score, winRate, expectancy, n }) => {
+          {convictionRows.map(({ label, score, winRate, expectancy, avgWinR, n }) => {
             const cc = convColor(label);
             const expPos = expectancy != null && expectancy > 0;
             const expNeg = expectancy != null && expectancy <= 0;
@@ -1289,6 +1289,12 @@ export const PerformanceView = () => {
                       {fmtR(expectancy)}
                     </div>
                   </div>
+                  <div className="hidden min-[744px]:flex flex-col gap-[2px]">
+                    <div className="font-[Carlito] text-[10px] uppercase tracking-[0.08em] text-[#8A8A94]">Avg Win R</div>
+                    <div className={cls("font-['DM_Mono'] text-[13px]", avgWinR != null ? 'text-[#2E7D5A]' : 'text-[#8A8A94]')}>
+                      {avgWinR != null ? `+${avgWinR.toFixed(2)}R` : '—'}
+                    </div>
+                  </div>
                   <div className="ml-auto flex flex-col gap-[2px] text-right">
                     <div className="font-[Carlito] text-[10px] uppercase tracking-[0.08em] text-[#8A8A94]">N</div>
                     <div className="font-['DM_Mono'] text-[13px] text-[#8A8A94]">{n}</div>
@@ -1305,19 +1311,220 @@ export const PerformanceView = () => {
         const expPos = expectancy != null && expectancy > 0;
         const expNeg = expectancy != null && expectancy <= 0;
         return (
-          <Card key={key}>
-            <div className="px-3.5 pb-3 pt-3.5">
-              <div className="mb-2 font-[Carlito] text-[10px] font-bold uppercase tracking-[0.12em] text-[#5A7A9E]">{label}</div>
-              <div className="grid grid-cols-4 gap-2 rounded-[8px] border border-[rgba(24,24,26,0.08)] bg-[#F2F0EC] px-3 py-2.5">
-                <Stat label="Win %" value={fmtPct(winRate)} valueClass={winRate != null && winRate > 50 ? 'text-[#2E7D5A]' : winRate != null ? 'text-[#C0392B]' : undefined} />
-                <Stat label="Expectancy" value={fmtR(expectancy)} valueClass={expPos ? 'text-[#2E7D5A]' : expNeg ? 'text-[#C0392B]' : undefined} />
-                <Stat label="Avg Win R" value={avgWinR != null ? `+${avgWinR.toFixed(2)}R` : '—'} valueClass={avgWinR != null ? 'text-[#2E7D5A]' : undefined} />
-                <Stat label="N" value={String(n)} />
+          <div
+            key={key}
+            onClick={() => onOpenDetail(key)}
+            className="cursor-pointer rounded-[14px] active:opacity-75"
+          >
+            <Card>
+              <div className="px-3.5 pb-3 pt-3.5">
+                <div className="mb-2 font-[Carlito] text-[10px] font-bold uppercase tracking-[0.12em] text-[#5A7A9E]">{label}</div>
+                <div className="grid grid-cols-4 gap-2 rounded-[8px] border border-[rgba(24,24,26,0.08)] bg-[#F2F0EC] px-3 py-2.5">
+                  <Stat label="Win %" value={fmtPct(winRate)} valueClass={winRate != null && winRate > 50 ? 'text-[#2E7D5A]' : winRate != null ? 'text-[#C0392B]' : undefined} />
+                  <Stat label="Expectancy" value={fmtR(expectancy)} valueClass={expPos ? 'text-[#2E7D5A]' : expNeg ? 'text-[#C0392B]' : undefined} />
+                  <Stat label="Avg Win R" value={avgWinR != null ? `+${avgWinR.toFixed(2)}R` : '—'} valueClass={avgWinR != null ? 'text-[#2E7D5A]' : undefined} />
+                  <Stat label="N" value={String(n)} />
+                </div>
               </div>
-            </div>
-          </Card>
+            </Card>
+          </div>
         );
       })}
+    </div>
+  );
+};
+
+const OUTCOME_GLYPH = { target_hit: '✓', stop_hit: '✗', entry_missed: '—' };
+const CONVICTION_CHIP = { 3: 'H', 2: 'M', 1: 'L' };
+
+const TradeCard = ({ trade }) => {
+  const {
+    ticker, status, outcome, r_multiple, bars_to_exit,
+    conviction_score, entry_zone, stop: stopPrice, target,
+    mfe_r, mae_r, post_exit_run_r, entry_confirmed_at, resolved_at,
+  } = trade;
+  const signalDate = trade.signals?.signal_date ?? null;
+  const isClosed = status === 'closed';
+
+  const glyph = isClosed ? (OUTCOME_GLYPH[outcome] ?? '·') : '·';
+
+  const daysLabel = isClosed
+    ? (bars_to_exit != null ? `${bars_to_exit}d` : null)
+    : entry_confirmed_at != null
+      ? `${Math.floor((new Date() - new Date(entry_confirmed_at).getTime()) / 86400000)}d open`
+      : null;
+
+  const fmtMD = (d) => {
+    if (!d) return null;
+    const dt = new Date(d);
+    return `${dt.getUTCMonth() + 1}/${dt.getUTCDate()}`;
+  };
+  const dateRange = isClosed
+    ? (signalDate || resolved_at
+      ? `${fmtMD(signalDate) ?? '?'} → ${fmtMD(resolved_at) ?? '?'}`
+      : null)
+    : (signalDate ? `signal ${fmtMD(signalDate)} · open` : null);
+
+  const hasExcursion = mfe_r != null || mae_r != null;
+  const showPostRun = post_exit_run_r != null && Math.abs(post_exit_run_r) >= 0.5;
+  const rPos = r_multiple != null && r_multiple > 0;
+  const convLabel = CONVICTION_CHIP[conviction_score];
+
+  return (
+    <Card>
+      <div className="px-3.5 pb-3 pt-3">
+        <div className="mb-1 flex items-baseline gap-2">
+          <span className="font-['Playfair_Display'] text-[15px] font-semibold text-[#18181A]">{ticker}</span>
+          {r_multiple != null && (
+            <span className={cls("ml-auto font-['DM_Mono'] text-[15px] font-semibold",
+              rPos ? 'text-[#2E7D5A]' : 'text-[#C0392B]')}>
+              {r_multiple > 0 ? '+' : ''}{r_multiple.toFixed(2)}R
+            </span>
+          )}
+          {daysLabel && (
+            <span className="font-['DM_Mono'] text-[11px] text-[#8A8A94]">{daysLabel}</span>
+          )}
+          <span className={cls('font-[Carlito] text-[12px] font-bold',
+            outcome === 'target_hit' ? 'text-[#2E7D5A]'
+            : outcome === 'stop_hit' ? 'text-[#C0392B]'
+            : 'text-[#8A8A94]')}>
+            {glyph}
+          </span>
+        </div>
+
+        <div className="mb-1.5 flex items-center gap-2">
+          {convLabel && (
+            <span className="rounded-full bg-[#F2F0EC] px-1.5 py-[1px] font-[Carlito] text-[9px] font-bold uppercase tracking-[0.08em] text-[#8A8A94]">
+              {convLabel}
+            </span>
+          )}
+          {dateRange && (
+            <span className="font-[Carlito] text-[10px] text-[#8A8A94]">{dateRange}</span>
+          )}
+        </div>
+
+        {(entry_zone != null || stopPrice != null || target != null) && (
+          <div className="mb-1.5 font-['DM_Mono'] text-[10px] text-[#8A8A94]">
+            {[
+              entry_zone != null && `Entry ${Number(entry_zone).toLocaleString()}`,
+              stopPrice  != null && `Stop ${Number(stopPrice).toLocaleString()}`,
+              target     != null && `Target ${Number(target).toLocaleString()}`,
+            ].filter(Boolean).join('  ')}
+          </div>
+        )}
+
+        {hasExcursion && (
+          <div className="font-['DM_Mono'] text-[10px] text-[#8A8A94]">
+            {mfe_r != null && (
+              <span className="mr-3">MFE <span className="text-[#2E7D5A]">+{Number(mfe_r).toFixed(1)}R</span></span>
+            )}
+            {mae_r != null && (
+              <span>MAE <span className="text-[#C0392B]">{Number(mae_r).toFixed(1)}R</span></span>
+            )}
+          </div>
+        )}
+
+        {showPostRun && (
+          <div className="mt-0.5 font-[Carlito] text-[10px] text-[#8A8A94]">
+            Post-exit run{' '}
+            <span className={cls("font-['DM_Mono']",
+              post_exit_run_r > 0 ? 'text-[#2E7D5A]' : 'text-[#C0392B]')}>
+              {post_exit_run_r > 0 ? '+' : ''}{Number(post_exit_run_r).toFixed(1)}R
+            </span>
+          </div>
+        )}
+      </div>
+    </Card>
+  );
+};
+
+export const SetupDetailView = ({ setupType }) => {
+  const [trades, setTrades] = React.useState(null);
+
+  React.useEffect(() => {
+    fetchSetupDetail(setupType)
+      .then(setTrades)
+      .catch(() => setTrades([]));
+  }, [setupType]);
+
+  if (trades === null) {
+    return <div className="p-4 pb-24 font-[Carlito] text-[13px] text-[#8A8A94] text-center">Loading…</div>;
+  }
+
+  const closed = trades.filter(t => t.status === 'closed');
+  const open = trades.filter(t => t.status === 'open');
+
+  const n = closed.length;
+  const wins = closed.filter(t => t.r_multiple != null && t.r_multiple > 0);
+  const winRate = n > 0 ? Math.round((wins.length / n) * 100) : null;
+  const expectancy = n > 0
+    ? parseFloat((closed.reduce((s, t) => s + (t.r_multiple ?? 0), 0) / n).toFixed(2))
+    : null;
+  const rVals = closed.map(t => t.r_multiple).filter(v => v != null).map(Number);
+  const bestR = rVals.length > 0 ? Math.max(...rVals) : null;
+  const worstR = rVals.length > 0 ? Math.min(...rVals) : null;
+  const ditVals = closed.map(t => t.bars_to_exit).filter(v => v != null);
+  const avgDIT = ditVals.length > 0
+    ? (ditVals.reduce((s, v) => s + v, 0) / ditVals.length).toFixed(1)
+    : null;
+
+  return (
+    <div className="flex flex-col gap-3 p-4 pb-24">
+
+      <Card>
+        <div className="px-3.5 pb-3 pt-3.5">
+          <div className="grid grid-cols-3 gap-2 rounded-[8px] border border-[rgba(24,24,26,0.08)] bg-[#F2F0EC] px-3 py-2.5">
+            <Stat
+              label="Win %"
+              value={fmtPct(winRate)}
+              valueClass={winRate != null && winRate > 50 ? 'text-[#2E7D5A]' : winRate != null ? 'text-[#C0392B]' : undefined}
+            />
+            <Stat
+              label="Expectancy"
+              value={fmtR(expectancy)}
+              valueClass={expectancy != null && expectancy > 0 ? 'text-[#2E7D5A]' : expectancy != null ? 'text-[#C0392B]' : undefined}
+            />
+            <Stat label="N" value={n > 0 ? String(n) : '—'} />
+          </div>
+          {(bestR != null || worstR != null || avgDIT != null) && (
+            <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 font-[Carlito] text-[11px] text-[#8A8A94]">
+              {bestR != null && (
+                <span>Best <span className="font-['DM_Mono'] text-[#2E7D5A]">+{bestR.toFixed(2)}R</span></span>
+              )}
+              {worstR != null && (
+                <span>Worst <span className="font-['DM_Mono'] text-[#C0392B]">{worstR.toFixed(2)}R</span></span>
+              )}
+              {avgDIT != null && (
+                <span>Avg {avgDIT} days in trade</span>
+              )}
+            </div>
+          )}
+        </div>
+      </Card>
+
+      {closed.length > 0 && (
+        <>
+          <SectionHeader title={`TRADES (${closed.length})`} />
+          <div className="grid gap-2.5 min-[744px]:grid-cols-2 min-[1024px]:grid-cols-3">
+            {closed.map(t => <TradeCard key={t.id} trade={t} />)}
+          </div>
+        </>
+      )}
+
+      {open.length > 0 && (
+        <>
+          <SectionHeader title={`OPEN POSITIONS (${open.length})`} />
+          <div className="grid gap-2.5 min-[744px]:grid-cols-2 min-[1024px]:grid-cols-3">
+            {open.map(t => <TradeCard key={t.id} trade={t} />)}
+          </div>
+        </>
+      )}
+
+      {closed.length === 0 && open.length === 0 && (
+        <div className="mt-8 text-center font-[Carlito] text-[13px] text-[#8A8A94]">
+          No trades yet for this setup.
+        </div>
+      )}
     </div>
   );
 };
