@@ -436,25 +436,20 @@ export async function fetchSetupDetail(setupType) {
   }
 }
 
-export async function fetchSentiment() {
+export async function fetchIntelBrief() {
   const url = import.meta.env.VITE_SUPABASE_URL;
   const key = import.meta.env.VITE_SUPABASE_ANON_KEY;
   const res = await fetch(
-    `${url}/rest/v1/daily_briefs?select=date,sections,generated_at&order=date.desc&limit=1`,
-    { headers: { apikey: key, Authorization: `Bearer ${key}` } }
+    `${url}/rest/v1/intel_briefs?select=brief_date,narrative,sections,generated_at&order=brief_date.desc&limit=1`,
+    {
+      headers: {
+        apikey: key,
+        Authorization: `Bearer ${key}`,
+        'Accept-Profile': 'chaos',
+      },
+    }
   );
-  if (!res.ok) return null;
+  if (!res.ok) throw new Error(`intel_briefs fetch failed: ${res.status}`);
   const rows = await res.json();
-  if (!rows[0]) return null;
-  const trading = rows[0].sections?.trading ?? {};
-  const genAt = rows[0].generated_at ? new Date(rows[0].generated_at) : null;
-  const minAgo = genAt ? Math.round((Date.now() - genAt.getTime()) / 60000) : null;
-  const ts = minAgo !== null
-    ? (minAgo < 60 ? `Updated ${minAgo} min ago` : `Updated ${Math.round(minAgo / 60)}h ago`)
-    : '';
-  return {
-    headline: trading.regime ?? 'No market data',
-    body: trading.note ?? '',
-    ts,
-  };
+  return rows[0] ?? null;
 }
