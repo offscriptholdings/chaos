@@ -86,6 +86,12 @@ function formatTimestamp(iso) {
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 }
 
+function formatSignalDate(dateStr) {
+  if (!dateStr) return null;
+  const d = new Date(dateStr);
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
 export function SignalCard({ signal, onOpen, onTake }) {
   const [expanded, setExpanded] = React.useState(false);
 
@@ -108,7 +114,9 @@ export function SignalCard({ signal, onOpen, onTake }) {
           </div>
           <div className="flex flex-col items-end gap-[2px]">
             <span className="font-['DM_Mono'] text-[16px] text-[#18181A]">${signal.entry.toFixed(2)}</span>
-            <span className="font-[Carlito] text-[10px] uppercase tracking-[0.08em] text-[#8A8A94]">{signal.age}</span>
+            <span className="font-[Carlito] text-[10px] uppercase tracking-[0.08em] text-[#8A8A94]">
+              {signal.signal_date ? `${formatSignalDate(signal.signal_date)} · ${signal.age}` : signal.age}
+            </span>
           </div>
         </div>
         <div className="mt-3 rounded-[8px] border border-[rgba(24,24,26,0.08)] bg-[#F2F0EC] px-3 py-2.5">
